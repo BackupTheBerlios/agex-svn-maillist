@@ -1,0 +1,4878 @@
+From seaeagle1 at sheep.berlios.de  Fri May 20 01:33:38 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Fri, 20 May 2005 01:33:38 +0200
+Subject: [Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+Message-ID: <200505192333.j4JNXcr8022334@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-20 01:33:34 +0200 (Fri, 20 May 2005)
+New Revision: 5
+
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/DirectSound/DirectSoundManager.cs
+   trunk/AGES/DirectSound/Sound.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/Sound.cs
+   trunk/AGES/SoundManager.cs
+Log:
+Added some comments and Pause() and Stop() methods
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -86,7 +86,7 @@
+             SceneNode cameraNode = scene.RootSceneNode.CreateChildSceneNode("CameraNode");
+             cameraNode.AttachObject(camera);
+  
+-            ////////////////////////////////////////////////////////////////////////////////
++            /////////////////////////- AGE Sound Library Settings -//////////////////////////
+             // initialise the SoundManager by setting the RenderWindow
+             SoundManager.Instance.SetRenderWindow(this.window, this.camera);
+             SoundManager.Instance.RolloffFactor = 0.01f; // we're working on a large scale
+
+Modified: trunk/AGES/DirectSound/DirectSoundManager.cs
+===================================================================
+--- trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -57,9 +57,13 @@
+ 		
+ 		public override Axiom.SoundSystems.Sound LoadSound(string filename, short type)
+ 		{
++			// create the sound and add it to our list
+ 			Axiom.SoundSystems.Sound sound = new Axiom.SoundSystems.DirectSound.Sound(filename, lastid, type);
+ 			soundlist.Add(sound);
++			
++			// update the ID counter
+ 			lastid++;
++			
+ 			return sound;
+ 		}
+ 		
+@@ -68,13 +72,17 @@
+ 			this.window = renderwindow;
+ 			this.cam = camera;
+ 			
++			// link the device to our current System.Windows.Form (since we need DirectX we're sure that we're in Windows)
+ 			device.SetCooperativeLevel((System.Windows.Forms.Control)window.Handle, CooperativeLevel.Priority);
+ 			
++			// create a buffer for the listener
+ 			BufferDescription desc = new BufferDescription();
+ 			desc.Control3D = true;
+ 			desc.PrimaryBuffer = true;
+ 			Buffer lbuffer = new Buffer(desc, device);
+ 			listener = new Listener3D(lbuffer);
++			
++			// let the log know that we're using DirectSound and it's set up
+ 			LogManager.Instance.Write("DirectSound SoundSystem initialised");
+ 		}
+ 		
+@@ -82,11 +90,14 @@
+ 		{
+ 			base.FrameUpdate(source, e);
+ 			
++			// if the camera moved
+ 			if(cam.WorldPosition.x != lastcamposition.x || cam.WorldPosition.y != lastcamposition.y || cam.WorldPosition.z != lastcamposition.z)
+ 			{
+ 				listener.Position = new Vector3(cam.WorldPosition.x, cam.WorldPosition.y, cam.WorldPosition.z);
+ 				lastcamposition = cam.WorldPosition;
+ 			}
++			
++			// if the camera turned
+ 			if(cam.WorldOrientation.w != lastcamorientation.w || cam.WorldOrientation.x != lastcamorientation.x || cam.WorldOrientation.y != lastcamorientation.y || cam.WorldOrientation.z != lastcamorientation.z)
+ 			{
+ 				Axiom.MathLib.Vector3 top = cam.WorldOrientation.YAxis;
+@@ -94,6 +105,8 @@
+ 				listener.Orientation = new Listener3DOrientation(new Vector3(front.x, front.y, front.z), new Vector3(top.x, top.y, top.z));	
+ 				lastcamorientation = cam.WorldOrientation;
+ 			}
++			
++			// we have updated all sound settings for this frame, so let DirectX recalculate the output sound with the new settings
+ 			listener.CommitDeferredSettings();
+ 			
+ 		}
+
+Modified: trunk/AGES/DirectSound/Sound.cs
+===================================================================
+--- trunk/AGES/DirectSound/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/DirectSound/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -35,22 +35,29 @@
+ 		
+ 		public Sound(string filename, int ID, short type) : base(filename, ID)
+ 		{
++			// get the file data
+ 			WaveFile wf = FileManager.Instance.Load(filename);
+ 			
+-			if(wf.WavFile != null)
++			if(wf.WavFile != null) // we have a wave file with headers
+ 			{
++				// set up the buffer properties
+ 				soundDesc = new BufferDescription();
+ 				soundDesc.GlobalFocus = false;
+ 				soundDesc.ControlVolume = true;
+ 				
++				// enable 3D features for 3D sounds
+ 				if(type == Sound.THREED_SOUND)
+ 				{
+ 					soundDesc.Control3D = true;
+ 					soundDesc.Mute3DAtMaximumDistance = true;
+ 				}
+ 				
++				// load the wave file from the stream into the buffer
+ 				sound = new SecondaryBuffer(wf.WavFile, soundDesc, ((DirectSoundManager)SoundManager.Instance).Device);
+-			} else {
++				
++			} else { // we have only raw PCM encoded sound data (usually from a decoder)
++				
++				// convert the format settings
+ 				WaveFormat wfo = new WaveFormat();
+ 				wfo.BitsPerSample = wf.Bits;
+ 				wfo.Channels = wf.Channels;
+@@ -59,20 +66,25 @@
+ 				wfo.FormatTag = WaveFormatTag.Pcm;
+ 				wfo.AverageBytesPerSecond = wf.Frequency * wfo.BlockAlign;
+ 				
++				// set up buffer properties
+ 				soundDesc = new BufferDescription(wfo);
+ 				soundDesc.GlobalFocus = false;
+ 				soundDesc.ControlVolume = true;
+ 				soundDesc.BufferBytes = (int)wf.Data.Length;
++				
++				// enable 3D features for 3D sounds
+ 				if(type == Sound.THREED_SOUND)
+ 				{
+ 					soundDesc.Control3D = true;
+ 					soundDesc.Mute3DAtMaximumDistance = true;
+ 				}
+ 				
++				// initialise the buffer and copy the (raw data) stream into it
+ 				sound = new SecondaryBuffer(soundDesc, ((DirectSoundManager)SoundManager.Instance).Device);	
+ 				sound.Write(0, wf.Data, (int)wf.Data.Length, LockFlag.EntireBuffer);
+ 			}
+ 			
++			// create a 3D buffer for 3D sounds
+ 			if(type == Sound.THREED_SOUND)
+ 			{
+ 				threeDsound = new Buffer3D(sound);
+@@ -92,6 +104,16 @@
+ 			}
+ 		}
+ 		
++		public override void Pause()
++		{
++			sound.Stop();
++		}
++		
++		public override void Stop()
++		{
++			sound.Stop();
++			sound.SetCurrentPosition(0);
++		}
+ 		public override void Dispose()
+ 		{
+ 			base.Dispose();
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -82,6 +82,16 @@
+ 			Al.alSourcePlay(source);
+ 		}
+ 		
++		public override void Pause()
++		{
++			Al.alSourcePause(source);
++		}
++		
++		public override void Stop()
++		{
++			Al.alSourceStop(source);
++		}
++		
+ 		public override void Dispose()
+ 		{
+ 			Al.alDeleteSources(1, ref source);
+
+Modified: trunk/AGES/Sound.cs
+===================================================================
+--- trunk/AGES/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -79,6 +79,16 @@
+ 		public abstract void Play(bool loop);
+ 		
+ 		/// <summary>
++		/// Stops playing the file, calling <see cref="Play(bool loop)">Play()</see> again will start playing from the position where Pause() was called
++		/// </summary>
++		public abstract void Pause();
++		
++		/// <summary>
++		/// Stops playing the file and set the play position to the start of the buffer
++		/// </summary>
++		public abstract void Stop();
++		
++		/// <summary>
+ 		/// The ID of this sound given by the SoundManager
+ 		/// </summary>
+ 		public int ID
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/SoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -22,8 +22,7 @@
+ // Some general remarks and todos
+ // TODO: split buffer and source to prevent more filesystem access than needed
+ // TODO: Music class for streaming long files
+-// TODO: Ogg/Mp3 decoder
+-// ?long term: load in seperate thread
++// TODO: Threading
+ 
+ using System;
+ using System.Collections;
+
+
+
+From seaeagle1 at sheep.berlios.de  Fri May 20 16:38:00 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Fri, 20 May 2005 16:38:00 +0200
+Subject: [Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug
+Message-ID: <200505201438.j4KEc0v2014224@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-20 16:37:59 +0200 (Fri, 20 May 2005)
+New Revision: 6
+
+Added:
+   trunk/AGES/bin/Debug/OpenAL32.dll
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/DirectSound/DirectSoundManager.cs
+   trunk/AGES/OpenAL/OpenALSoundManager.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/SoundManager.cs
+Log:
+Updated the OpenAL part
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -94,12 +94,12 @@
+             // load a simple sound
+             Sound back = SoundManager.Instance.LoadSound("background.wav", Sound.SIMPLE_SOUND);
+             // set the volume low
+-            back.Volume = -2000;
++           // back.Volume = -2000;
+             // play the simple sound in a loop
+-           // back.Play(true);
++            back.Play(true);
+             
+             // load a 3D sound
+-            growl = SoundManager.Instance.LoadSound("growl.mp3", Sound.THREED_SOUND);
++            growl = SoundManager.Instance.LoadSound("growl.ogg", Sound.THREED_SOUND);
+             // attach the sound to the head
+            	headNode.AttachObject(growl);
+             // set the sound's properties
+
+Modified: trunk/AGES/DirectSound/DirectSoundManager.cs
+===================================================================
+--- trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -69,8 +69,7 @@
+ 		
+ 		public override void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+-			this.window = renderwindow;
+-			this.cam = camera;
++			base.SetRenderWindow(renderwindow, camera);
+ 			
+ 			// link the device to our current System.Windows.Form (since we need DirectX we're sure that we're in Windows)
+ 			device.SetCooperativeLevel((System.Windows.Forms.Control)window.Handle, CooperativeLevel.Priority);
+
+Modified: trunk/AGES/OpenAL/OpenALSoundManager.cs
+===================================================================
+--- trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -33,18 +33,52 @@
+ 	public class OpenALSoundManager : SoundManager
+ 	{
+ 		private Vector3 listenerVelocity = Vector3.Zero;
++		private float rolloff = 1;
+ 		
+ 		public OpenALSoundManager () : base()
+ 		{
+ 			Alut.alutInit();
+ 			Al.alGetError();
+-						
++			
++			instance = this;
++			
+ 			LogManager.Instance.Write("OpenAL SoundSystem initialised");
+ 		}
++		
++		protected override void FrameUpdate(Object source, FrameEventArgs e)
++		{
++			base.FrameUpdate(source, e);
++			
++			// if the camera moved
++			if(cam.WorldPosition.x != lastcamposition.x || cam.WorldPosition.y != lastcamposition.y || cam.WorldPosition.z != lastcamposition.z)
++			{
++				float[] vector = new float[]{cam.WorldPosition.x, cam.WorldPosition.y, cam.WorldPosition.z};
++				Al.alListenerfv(Al.AL_POSITION, vector);
++				lastcamposition = cam.WorldPosition;
++			} 
++			
++			// if the camera turned
++			if(cam.WorldOrientation.w != lastcamorientation.w || cam.WorldOrientation.x != lastcamorientation.x || cam.WorldOrientation.y != lastcamorientation.y || cam.WorldOrientation.z != lastcamorientation.z)
++			{
++				Axiom.MathLib.Vector3 top = cam.WorldOrientation.YAxis;
++				Axiom.MathLib.Vector3 front = cam.WorldOrientation.ZAxis;
++				float[] doublevector = new float[]{-front.x, -front.y, -front.z, top.x, top.y, top.z}; // negative front, to switch the left and right channel TODO: Test this with surround sound to see if back and forward is ok
++				Al.alListenerfv(Al.AL_ORIENTATION, doublevector);
++				lastcamorientation = cam.WorldOrientation;
++			}
++			
++		}
+ 	
+ 		public override Axiom.SoundSystems.Sound LoadSound(string filename, short type)
+ 		{
+-			return null;
++			// create the sound and add it to the list
++			Sound thissound = new Axiom.SoundSystems.OpenAL.Sound(filename, lastid, type);
++			soundlist.Add(thissound);
++			
++			// update the last id
++			lastid++;
++			
++			return thissound;
+ 		}
+ 		
+ 		public override Vector3 CameraVelocity
+@@ -62,12 +96,10 @@
+ 		public override float RolloffFactor
+ 		{
+ 			set{
+-				Al.alListenerf(Al.AL_ROLLOFF_FACTOR, value);
++				rolloff = value;
+ 			}
+ 			get{
+-				float val;
+-				Al.alGetListenerf(Al.AL_ROLLOFF_FACTOR, out val);
+-				return val;
++				return rolloff;
+ 			}
+ 		}
+ 
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -23,6 +23,7 @@
+ using System.IO;
+ using Axiom.Core;
+ using Axiom.MathLib;
++using Axiom.SoundSystems;
+ using Tao.OpenAl;
+ 
+ namespace Axiom.SoundSystems.OpenAL
+@@ -30,44 +31,93 @@
+ 
+ 	public class Sound : Axiom.SoundSystems.Sound
+ 	{
+-		private int sound;
+-		private int source;
++		private static int sound;
++		private static int source;
+ 		private Vector3 worldposition = Vector3.Zero;
++		private short soundtype;
++		private float rolloff = 1;
+ 		
+ 		public Sound(string filename, int ID, short type) : base(filename, ID)
+ 		{
+-			switch(type)
++			this.soundtype = type;
++			
++			// initialize the buffer
++			Al.alGenBuffers(1, out sound);
++			
++			WaveFile file = FileManager.Instance.Load(filename);
++			
++			int format, size, frequency, loop;
++			byte[] data;			
++			
++			if ( (file.WavFile) != null )
++			{ 
++				// we have a full wave file with headers
++				// read the stream into a byte array
++				byte[] buffer = new byte[file.WavFile.Length];
++				file.WavFile.Read(buffer, 0, (int)file.WavFile.Length);
++				
++				Alut.alutLoadWAVMemory(buffer, out format, out data, out size, out frequency, out loop);
++				
++			} else { // we only have raw PCM encoded data
++				
++				// read the stream into a byte array
++				data = new byte[file.Data.Length];
++				file.Data.Read(data, 0, (int)file.Data.Length);
++				size = (int) file.Data.Length;
++				frequency = file.Frequency;
++				format = 0;
++				
++				// get the data format from the Channels and Bits properties
++				switch(file.Bits)
++				{
++					case 8:
++						switch(file.Channels)
++						{
++							case 1:
++								format = Al.AL_FORMAT_MONO8;
++								break;
++							case 2:
++								format = Al.AL_FORMAT_STEREO8;
++								break;
++						}
++						break;
++					case 16:
++						switch(file.Channels)
++						{
++							case 1:
++								format = Al.AL_FORMAT_MONO16;
++								break;
++							case 2:
++								format = Al.AL_FORMAT_STEREO16;
++								break;
++						}
++						break;
++				}
++			}
++			
++			// fill the buffer
++			Al.alBufferData(sound, format, data, size, frequency);
++			
++			if(file.WavFile != null) // if we loaded a Wave file we can unload it now
+ 			{
+-				case SIMPLE_SOUND:
+-					Al.alGenBuffers(1, out sound);
+-					if(Al.alGetError() != Al.AL_NO_ERROR) {
+-						throw new AxiomException("Unable to create buffer for file " + filename, null);
+-					}
+-					
+-					MemoryStream file = (MemoryStream)ResourceManager.FindCommonResourceData(filename);
+-					
+-					int format, size, frequency, loop;
+-					byte[] data;
+-					Alut.alutLoadWAVMemory(file.GetBuffer(), out format, out data, out size, out frequency, out loop);
+-					if(data == null)
+-					{
+-						throw new AxiomException("Unable to load " + filename + " into buffer");
+-					}
+-					
+-					Al.alBufferData(sound, format, data, size, frequency);
+-					Alut.alutUnloadWAV(format, out data, size, frequency);
++				Alut.alutUnloadWAV(format, out data, size, frequency);
++			}
++			
++			// create a sound source for the buffer
++			Al.alGenSources(1, out source);
+ 
+-					Al.alGenSources(1, out source);
+-					if(Al.alGetError() != Al.AL_NO_ERROR)
+-					{
+-						throw new AxiomException("Unable to create source for file " + filename, null);
+-					}
+-					
+-					Al.alSourcei(source, Al.AL_BUFFER, sound);
+-					
+-					break;
+-				case THREED_SOUND:
+-					break;
++			// link the buffer and sound source
++			Al.alSourcei(source, Al.AL_BUFFER, sound);
++			
++			if(type == Sound.SIMPLE_SOUND)
++			{
++				Al.alSourcei(source, Al.AL_DISTANCE_MODEL, Al.AL_NONE);
++				rolloff = 0;
++				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, 0);
++				
++			} else if (type == Sound.THREED_SOUND) {
++				
++				Al.alSourcei(source, Al.AL_DISTANCE_MODEL, Al.AL_INVERSE_DISTANCE);
+ 			}
+ 		}
+ 		
+@@ -99,9 +149,30 @@
+ 			base.Dispose();
+ 		}
+ 		
++		public override void UpdatePosition()
++		{
++			base.UpdatePosition();
++			
++			// check if the (global) rolloff factor changed and adapt to it
++			if(SoundManager.Instance.RolloffFactor != rolloff && this.soundtype == Sound.THREED_SOUND)
++			{
++				rolloff = SoundManager.Instance.RolloffFactor;
++				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, rolloff);
++			}
++			
++			// if it's a 'simple' sound, set the position to the listener's position
++			if(this.soundtype == Sound.SIMPLE_SOUND)
++			{
++				float[] temp = new float[3];
++				Al.alGetListenerfv(Al.AL_POSITION, temp);
++				Al.alSourcefv(source, Al.AL_POSITION, temp);
++			}
++		}
++		
+ 		protected override void SetPosition(Axiom.MathLib.Vector3 newposition)
+ 		{
+-			//TODO: Implement
++			float[] vector = new float[]{newposition.x, newposition.y, newposition.z};
++			Al.alSourcefv(source, Al.AL_POSITION, vector);
+ 		}
+ 		
+ 		public override Vector3 WorldPosition
+@@ -111,6 +182,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: relative to SceneNode
+ 		public override int[] ConeAngles
+ 		{
+ 			get{
+@@ -125,6 +197,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: relative to SceneNode
+ 		public override Vector3 ConeDirection
+ 		{
+ 			get{
+@@ -187,6 +260,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: Volume conversion doesn't work too well yet
+ 		protected float GetOpenALVolume(int directSoundVolume)
+ 		{
+ 			float newvalue = (float)directSoundVolume / 1000f + 1f;
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/SoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -141,9 +141,11 @@
+ 		/// </summary>
+ 		/// <param name="window">The target RenderWindow</param>
+ 		/// <param name="camera">The 'listening' camera</param>
+-		public virtual void SetRenderWindow(RenderWindow window, Camera camera)
++		public virtual void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+ 			FileManager.Instance.LogSupportedFiles();
++			this.window = renderwindow;
++			this.cam = camera;
+ 		}
+ 		
+ 		/// <summary>
+
+Added: trunk/AGES/bin/Debug/OpenAL32.dll
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/AGES/bin/Debug/OpenAL32.dll
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+
+
+From seaeagle1 at sheep.berlios.de  Fri May 20 16:50:21 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Fri, 20 May 2005 16:50:21 +0200
+Subject: [Agex-svn] r7 - trunk/AGES/OpenAL
+Message-ID: <200505201450.j4KEoLTZ014906@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-20 16:50:21 +0200 (Fri, 20 May 2005)
+New Revision: 7
+
+Modified:
+   trunk/AGES/OpenAL/OpenALSoundManager.cs
+Log:
+Removed deferred commit plans as it seems that OpenAL does immediate commits more efficient
+
+Modified: trunk/AGES/OpenAL/OpenALSoundManager.cs
+===================================================================
+--- trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
++++ trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-20 14:50:21 UTC (rev 7)
+@@ -47,6 +47,7 @@
+ 		
+ 		protected override void FrameUpdate(Object source, FrameEventArgs e)
+ 		{
++					
+ 			base.FrameUpdate(source, e);
+ 			
+ 			// if the camera moved
+
+
+
+From seaeagle1 at sheep.berlios.de  Sat May 21 23:38:32 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Sat, 21 May 2005 23:38:32 +0200
+Subject: [Agex-svn] r8 - in trunk/AGES: . AGESDemo Decoders/mp3 DirectSound OpenAL
+Message-ID: <200505212138.j4LLcWa1016212@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-21 23:38:32 +0200 (Sat, 21 May 2005)
+New Revision: 8
+
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/Decoders/mp3/DecoderMP3.cs
+   trunk/AGES/Decoders/mp3/Plugin.cs
+   trunk/AGES/DirectSound/Sound.cs
+   trunk/AGES/FileManager.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/Sound.cs
+   trunk/AGES/SoundManager.cs
+   trunk/AGES/WaveFile.cs
+Log:
+Update some documentation and made ConeDirection relative to SceneNode
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -85,7 +85,7 @@
+             // create a scene node to attach the camera to
+             SceneNode cameraNode = scene.RootSceneNode.CreateChildSceneNode("CameraNode");
+             cameraNode.AttachObject(camera);
+- 
++            
+             /////////////////////////- AGE Sound Library Settings -//////////////////////////
+             // initialise the SoundManager by setting the RenderWindow
+             SoundManager.Instance.SetRenderWindow(this.window, this.camera);
+@@ -103,12 +103,13 @@
+             // attach the sound to the head
+            	headNode.AttachObject(growl);
+             // set the sound's properties
+-            //growl.ConeAngles = new int[]{90, 120};
+-           // growl.ConeDirection = Vector3.UnitZ;
++            growl.ConeAngles = new int[]{120, 120};
++            growl.ConeDirection = Vector3.UnitZ;
+       		//growl.MaxDistance = 5000;
+-           // growl.OutsideVolume = -10000;
++            growl.OutsideVolume = -10000;
+             // play the 3D sound in a loop
+             growl.Play(true);
++            
+             ////////////////////////////////////////////////////////////////////////////////
+             
+             // create new animation
+
+Modified: trunk/AGES/Decoders/mp3/DecoderMP3.cs
+===================================================================
+--- trunk/AGES/Decoders/mp3/DecoderMP3.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Decoders/mp3/DecoderMP3.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -40,6 +40,7 @@
+ {
+ 	/// <summary>
+ 	/// The Mp3 decoder
++	/// (This assembly is GPL licensed)
+ 	/// </summary>
+ 	public class DecoderMP3 : IDecoder
+ 	{
+
+Modified: trunk/AGES/Decoders/mp3/Plugin.cs
+===================================================================
+--- trunk/AGES/Decoders/mp3/Plugin.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Decoders/mp3/Plugin.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -31,10 +31,13 @@
+ namespace Axiom.SoundSystems.Decoders
+ {
+ 	/// <summary>
+-	/// Summary description for MP3Plugin.
++	/// The Axiom plugin for the MP3 decoder
+ 	/// </summary>
+ 	public class MP3Plugin : IPlugin 
+ 	{ 
++		/// <summary>
++		/// Register the MP3 decoder and the .mp3 extension with the <see cref="Axiom.SoundSystems.FileManager">FileManager</see>
++		/// </summary>
+ 		public void Start() 
+ 		{ 
+ 			if(FileManager.Instance == null)
+@@ -45,6 +48,9 @@
+ 			FileManager.Instance.DecoderTypes.Add(typeof(Axiom.SoundSystems.Decoders.DecoderMP3));
+ 		} 
+ 
++		/// <summary>
++		/// Remove registration of the MP3 decoder and .mp3 extension from the <see cref="Axiom.SoundSystems.FileManager">FileManager</see>
++		/// </summary>
+ 		public void Stop() 
+ 		{ 
+ 			FileManager.Instance.Extensions.Remove("mp3");
+
+Modified: trunk/AGES/DirectSound/Sound.cs
+===================================================================
+--- trunk/AGES/DirectSound/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/DirectSound/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -150,17 +150,10 @@
+ 			}
+ 		}
+ 		
+-		public override Axiom.MathLib.Vector3 ConeDirection
++		protected override void SetConeDirection(Axiom.MathLib.Vector3 direction)
+ 		{
+-			get{
+-				//TODO: Relative to SceneNode
+-				return new Axiom.MathLib.Vector3(threeDsound.ConeOrientation.X, threeDsound.ConeOrientation.Y, threeDsound.ConeOrientation.Z);
+-			}
+-			set{
+-				//TODO: Relative to SceneNode
+-				Axiom.MathLib.Vector3 vector = value;
+-				threeDsound.ConeOrientation = new Vector3(vector.x, vector.y, vector.z);
+-			}
++			Axiom.MathLib.Vector3 vector = direction;
++			threeDsound.ConeOrientation = new Vector3(vector.x, vector.y, vector.z);
+ 		}
+ 		
+ 		public override int OutsideVolume
+
+Modified: trunk/AGES/FileManager.cs
+===================================================================
+--- trunk/AGES/FileManager.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/FileManager.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -28,7 +28,7 @@
+ namespace Axiom.SoundSystems
+ {
+ 	/// <summary>
+-	/// The FileManager handles the loading of sound files
++	/// Class FileManager, takes care of the loading and decoding of audio files
+ 	/// </summary>
+ 	public class FileManager
+ 	{
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -178,11 +178,11 @@
+ 		public override Vector3 WorldPosition
+ 		{
+ 			get{
++				//TODO: WorldPosition
+ 				return worldposition;
+ 			}
+ 		}
+ 		
+-		//TODO: relative to SceneNode
+ 		public override int[] ConeAngles
+ 		{
+ 			get{
+@@ -197,18 +197,11 @@
+ 			}
+ 		}
+ 		
+-		//TODO: relative to SceneNode
+-		public override Vector3 ConeDirection
++		protected override void SetConeDirection(Axiom.MathLib.Vector3 direction)
+ 		{
+-			get{
+-				float[] vector = new float[]{0,0,0};
+-				Al.alGetSourcefv(source, Al.AL_DIRECTION, vector);
+-				return new Vector3(vector[0], vector[1], vector[2]);
+-			}
+-			set{
+-				float[] vector = new float[]{value.x, value.y, value.z};
+-				Al.alSourcefv(source, Al.AL_DIRECTION, vector);
+-			}
++			Axiom.MathLib.Vector3 vector = direction;
++			float[] vector2 = new float[]{vector.x, vector.y, vector.z};
++			Al.alSourcefv(source, Al.AL_DIRECTION, vector2);			
+ 		}
+ 		
+ 		public override int OutsideVolume
+
+Modified: trunk/AGES/Sound.cs
+===================================================================
+--- trunk/AGES/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -51,6 +51,21 @@
+ 		protected Axiom.MathLib.Vector3 lastposition = Axiom.MathLib.Vector3.Zero;
+ 		
+ 		/// <summary>
++		/// SceneNode's last orientation, to check if it's changed
++		/// </summary>
++		protected Quaternion lastorientation = Quaternion.Zero;
++		
++		/// <summary>
++		/// Last cone direction, to check if it's changed
++		/// </summary>
++		protected Vector3 lastdirection = Vector3.Zero;
++		
++		/// <summary>
++		/// The direction of the sound cone
++		/// </summary>
++		protected Vector3 conedirection = Vector3.Zero;
++		
++		/// <summary>
+ 		/// Type is a simple warning or background sound, without fancy 3D positioning etc.
+ 		/// </summary>
+ 		public const short SIMPLE_SOUND = 1;
+@@ -61,7 +76,7 @@
+ 		public const short THREED_SOUND = 2;
+ 		
+ 		/// <summary>
+-		/// Constructor, do not use this but initialise through SoundManager.LoadFile()
++		/// Constructor, do not use this but initialise through <see cref="Axiom.SoundSystems.SoundManager.LoadSound">SoundManager.LoadSound()</see>
+ 		/// </summary>
+ 		/// <param name="filename">The filename of the wave file (searched in the common resource data, ie. in the paths set in EngineConfig.xml)</param>
+ 		/// <param name="ID">This sound's ID given by the SoundManager</param>
+@@ -79,7 +94,7 @@
+ 		public abstract void Play(bool loop);
+ 		
+ 		/// <summary>
+-		/// Stops playing the file, calling <see cref="Play(bool loop)">Play()</see> again will start playing from the position where Pause() was called
++		/// Stops playing the file, calling <see cref="Axiom.SoundSystems.Sound.Play">Play()</see> again will start playing from the position where Pause() was called
+ 		/// </summary>
+ 		public abstract void Pause();
+ 		
+@@ -111,6 +126,7 @@
+ 		/// </summary>
+ 		public virtual void UpdatePosition()
+ 		{
++			// if the position is changed
+ 			if((parentNode != null) && ( (lastnodeposition.x != parentNode.WorldPosition.x || lastnodeposition.y != parentNode.WorldPosition.y || lastnodeposition.z != parentNode.WorldPosition.z) || (this.Position != lastposition)))
+ 			{
+ 				SetPosition(parentNode.WorldPosition + this.Position);
+@@ -118,16 +134,31 @@
+ 				lastposition = this.Position;
+ 			}
+ 			
++			// if the orientation is changed
++			if((parentNode != null) && ( (parentNode.WorldOrientation.w != lastorientation.w || parentNode.WorldOrientation.x != lastorientation.x || parentNode.WorldOrientation.y != lastorientation.y || parentNode.WorldOrientation.z != lastorientation.z) || (conedirection != lastdirection)))
++			{
++				SetConeDirection(Quaternion.Multiply(parentNode.WorldOrientation, conedirection));
++				lastorientation = parentNode.WorldOrientation;
++				lastdirection = conedirection;
++			}
+ 		}
+ 		
+ 		/// <summary>
+ 		/// Set a new WorldPosition of the sound
+ 		/// </summary>
++		/// <param name="newposition">The position to set</param>
+ 		protected abstract void SetPosition(Axiom.MathLib.Vector3 newposition);
+ 		
+ 		/// <summary>
+-		/// Set the current camera
++		/// Set a new direction of the sound cone in World coordinates
+ 		/// </summary>
++		/// <param name="direction">The direction to set</param>
++		protected abstract void SetConeDirection(Axiom.MathLib.Vector3 direction);
++		
++		/// <summary>
++		/// Set the current camera - Unused
++		/// </summary>
++		/// <param name="camera">The current camera</param>
+ 		public override void NotifyCurrentCamera(Camera camera)
+ 		{
+ 		}
+@@ -135,6 +166,7 @@
+ 		/// <summary>
+ 		/// Null-implementation of SceneObject Member
+ 		/// </summary>
++		/// <param name="queue"></param>
+ 		public override void UpdateRenderQueue(Axiom.Graphics.RenderQueue queue)
+ 		{
+ 			
+@@ -191,12 +223,16 @@
+ 		}
+ 		
+ 		/// <summary>
+-		/// The direction of the sound cone ((not yet) relative to the ScenNode orientation)
++		/// The direction of the sound cone (relative to the SceneNode orientation)
+ 		/// </summary>
+-		public abstract Axiom.MathLib.Vector3 ConeDirection
++		public virtual Axiom.MathLib.Vector3 ConeDirection
+ 		{
+-			get;
+-			set;
++			get{
++				return conedirection;
++			}
++			set{
++				conedirection = value;
++			}
+ 		}
+ 		
+ 		/// <summary>
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/SoundManager.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -34,7 +34,7 @@
+ {
+ 
+ 	/// <summary>
+-	/// Abstract class SoundManager : IDisposable, Keeps track of loaded sounds and updates 
++	/// Abstract Class SoundManager : IDisposable, Keeps track of loaded sounds and updates 
+ 	/// sound and listener positions according to scene changes
+ 	/// </summary>
+ 	public abstract class SoundManager : IDisposable
+@@ -139,7 +139,7 @@
+ 		/// <summary>
+ 		/// Do some final initialisations
+ 		/// </summary>
+-		/// <param name="window">The target RenderWindow</param>
++		/// <param name="renderwindow">The target RenderWindow</param>
+ 		/// <param name="camera">The 'listening' camera</param>
+ 		public virtual void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+
+Modified: trunk/AGES/WaveFile.cs
+===================================================================
+--- trunk/AGES/WaveFile.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/WaveFile.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -24,7 +24,9 @@
+ 
+ namespace Axiom.SoundSystems
+ {
+-
++	/// <summary>
++	/// Structure WaveFile defines a wavefile, pcm data and format settings
++	/// </summary>
+ 	public struct WaveFile
+ 	{
+ 		private int freq;
+@@ -33,6 +35,9 @@
+ 		private Stream data;
+ 		private Stream file;
+ 		
++		/// <summary>
++		/// The sampling frequency of the data (in Hz = samples / second)
++		/// </summary>
+ 		public int Frequency
+ 		{
+ 			get{
+@@ -43,6 +48,9 @@
+ 			}
+ 		}
+ 		
++		/// <summary>
++		/// Sets the data 8 or 16 bits
++		/// </summary>
+ 		public short Bits
+ 		{
+ 			get{
+@@ -53,6 +61,9 @@
+ 			}
+ 		}
+ 		
++		/// <summary>
++		/// Set if it is a stereo or mono file
++		/// </summary>
+ 		public short Channels
+ 		{
+ 			get{
+@@ -63,6 +74,9 @@
+ 			}
+ 		}
+ 		
++		/// <summary>
++		/// Stream containing raw pcm data from decoders
++		/// </summary>
+ 		public Stream Data
+ 		{
+ 			get{
+@@ -73,6 +87,9 @@
+ 			}
+ 		}
+ 		
++		/// <summary>
++		/// Stream containing a full Wav file including headers
++		/// </summary>
+ 		public Stream WavFile
+ 		{
+ 			get{
+
+
+
+From seaeagle1 at sheep.berlios.de  Wed May 25 17:33:39 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Wed, 25 May 2005 17:33:39 +0200
+Subject: [Agex-svn] r9 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+Message-ID: <200505251533.j4PFXdaK032038@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-25 17:33:39 +0200 (Wed, 25 May 2005)
+New Revision: 9
+
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/DirectSound/DirectSoundManager.cs
+   trunk/AGES/OpenAL/OpenALSoundManager.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/Sound.cs
+   trunk/AGES/SoundManager.cs
+Log:
+Added PreLoadSound to load sounds in parallel thread
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -49,7 +49,11 @@
+         protected Sound growl;
+         
+         protected override void CreateScene() {
+-            // set some ambient light
++             // initialise the SoundManager by setting the RenderWindow
++            SoundManager.Instance.SetRenderWindow(this.window, this.camera);
++	       	int back_id = SoundManager.Instance.PreLoadSound("background.wav", Sound.SIMPLE_SOUND);
++
++	       	// set some ambient light
+             scene.AmbientLight = new ColorEx(1.0f, 0.2f, 0.2f, 0.2f);
+ 
+             // create a skydome
+@@ -87,20 +91,20 @@
+             cameraNode.AttachObject(camera);
+             
+             /////////////////////////- AGE Sound Library Settings -//////////////////////////
+-            // initialise the SoundManager by setting the RenderWindow
+-            SoundManager.Instance.SetRenderWindow(this.window, this.camera);
+             SoundManager.Instance.RolloffFactor = 0.01f; // we're working on a large scale
++           	growl = SoundManager.Instance.LoadSound("growl.ogg", Sound.THREED_SOUND);
+             
++            Sound back = SoundManager.Instance.GetSound( back_id );
++            
+             // load a simple sound
+-            Sound back = SoundManager.Instance.LoadSound("background.wav", Sound.SIMPLE_SOUND);
++            //Sound back = SoundManager.Instance.LoadSound("background.wav", Sound.SIMPLE_SOUND);
+             // set the volume low
+-           // back.Volume = -2000;
++            back.Volume = -2000;
+             // play the simple sound in a loop
+             back.Play(true);
+             
+             // load a 3D sound
+-            growl = SoundManager.Instance.LoadSound("growl.ogg", Sound.THREED_SOUND);
+-            // attach the sound to the head
++             // attach the sound to the head
+            	headNode.AttachObject(growl);
+             // set the sound's properties
+             growl.ConeAngles = new int[]{120, 120};
+
+Modified: trunk/AGES/DirectSound/DirectSoundManager.cs
+===================================================================
+--- trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -21,6 +21,8 @@
+ 
+ using System;
+ using System.IO;
++using System.Collections;
++using System.Threading;
+ using Axiom.Core;
+ using Axiom.Graphics;
+ using Axiom.SoundSystems;
+@@ -59,13 +61,20 @@
+ 		{
+ 			// create the sound and add it to our list
+ 			Axiom.SoundSystems.Sound sound = new Axiom.SoundSystems.DirectSound.Sound(filename, lastid, type);
+-			soundlist.Add(sound);
++			soundlist.Insert(lastid, sound);
+ 			
+ 			// update the ID counter
+ 			lastid++;
+ 			
+ 			return sound;
+ 		}
++
++		protected override void ThreadedLoadSound(object stateInfo)
++		{
++			LoadInfo info = (LoadInfo)stateInfo;
++			Axiom.SoundSystems.Sound sound = new Axiom.SoundSystems.DirectSound.Sound(info.file_name, info.sound_id, info.sound_type);
++			soundlist.Insert(info.sound_id, sound);
++		}
+ 		
+ 		public override void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+
+Modified: trunk/AGES/OpenAL/OpenALSoundManager.cs
+===================================================================
+--- trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -21,6 +21,7 @@
+ 
+ using System;
+ using System.IO;
++using System.Threading;
+ using Axiom.Core;
+ using Axiom.Graphics;
+ using Axiom.MathLib;
+@@ -74,7 +75,7 @@
+ 		{
+ 			// create the sound and add it to the list
+ 			Sound thissound = new Axiom.SoundSystems.OpenAL.Sound(filename, lastid, type);
+-			soundlist.Add(thissound);
++			soundlist.Insert(lastid, thissound);
+ 			
+ 			// update the last id
+ 			lastid++;
+@@ -82,6 +83,14 @@
+ 			return thissound;
+ 		}
+ 		
++		
++		protected override void ThreadedLoadSound(object stateInfo)
++		{
++			LoadInfo info = (LoadInfo)stateInfo;
++			Axiom.SoundSystems.Sound sound = new Axiom.SoundSystems.OpenAL.Sound(info.file_name, info.sound_id, info.sound_type);
++			soundlist.Insert(info.sound_id, sound);
++		}
++		
+ 		public override Vector3 CameraVelocity
+ 		{
+ 			get{
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -31,9 +31,8 @@
+ 
+ 	public class Sound : Axiom.SoundSystems.Sound
+ 	{
+-		private static int sound;
+-		private static int source;
+-		private Vector3 worldposition = Vector3.Zero;
++		private int sound;
++		private int source;
+ 		private short soundtype;
+ 		private float rolloff = 1;
+ 		
+@@ -48,7 +47,7 @@
+ 			
+ 			int format, size, frequency, loop;
+ 			byte[] data;			
+-			
++
+ 			if ( (file.WavFile) != null )
+ 			{ 
+ 				// we have a full wave file with headers
+@@ -114,6 +113,8 @@
+ 				Al.alSourcei(source, Al.AL_DISTANCE_MODEL, Al.AL_NONE);
+ 				rolloff = 0;
+ 				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, 0);
++				Al.alSourcei(source, Al.AL_SOURCE_RELATIVE, Al.AL_TRUE);
++				Al.alSourcefv(source, Al.AL_POSITION, new float[]{0,0,0});
+ 				
+ 			} else if (type == Sound.THREED_SOUND) {
+ 				
+@@ -159,14 +160,6 @@
+ 				rolloff = SoundManager.Instance.RolloffFactor;
+ 				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, rolloff);
+ 			}
+-			
+-			// if it's a 'simple' sound, set the position to the listener's position
+-			if(this.soundtype == Sound.SIMPLE_SOUND)
+-			{
+-				float[] temp = new float[3];
+-				Al.alGetListenerfv(Al.AL_POSITION, temp);
+-				Al.alSourcefv(source, Al.AL_POSITION, temp);
+-			}
+ 		}
+ 		
+ 		protected override void SetPosition(Axiom.MathLib.Vector3 newposition)
+@@ -178,8 +171,9 @@
+ 		public override Vector3 WorldPosition
+ 		{
+ 			get{
+-				//TODO: WorldPosition
+-				return worldposition;
++				float[] vector = new float[3];
++				Al.alGetSourcefv(source, Al.AL_POSITION, vector);
++				return new Vector3(vector[0], vector[1], vector[2]);
+ 			}
+ 		}
+ 		
+@@ -253,10 +247,9 @@
+ 			}
+ 		}
+ 		
+-		//TODO: Volume conversion doesn't work too well yet
+ 		protected float GetOpenALVolume(int directSoundVolume)
+ 		{
+-			float newvalue = (float)directSoundVolume / 1000f + 1f;
++			float newvalue = (float)directSoundVolume / 10000f + 1f;
+ 			if(newvalue > 1f)
+ 			{
+ 				return 1f;
+@@ -270,7 +263,7 @@
+ 		
+ 		protected int GetDirectSoundVolume(float openALVolume)
+ 		{
+-			int newvalue = Int32.Parse(Math.Round((openALVolume - 1) * 1000).ToString());
++			int newvalue = Convert.ToInt32((openALVolume - 1) * 10000);
+ 			if(newvalue < -10000)
+ 			{
+ 				return -10000;
+
+Modified: trunk/AGES/Sound.cs
+===================================================================
+--- trunk/AGES/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/Sound.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -26,7 +26,7 @@
+ namespace Axiom.SoundSystems
+ {
+ 	/// <summary>
+-	/// Abstract Class Sound : SceneObject, IDisposable, Implements and controls a sound buffer as SceneObject
++	/// Class Sound : SceneObject, IDisposable, Implements and controls a sound buffer as SceneObject
+ 	/// </summary>
+ 	public abstract class Sound : SceneObject, IDisposable
+ 	{
+@@ -82,9 +82,12 @@
+ 		/// <param name="ID">This sound's ID given by the SoundManager</param>
+ 		public Sound(string filename, int ID) : base()
+ 		{
+-			id = ID;
+-			name = "RESERVED/Sounds/ID" + this.ID.ToString();
+-			LogManager.Instance.Write("SoundSystem: Loading sound {0}", filename);
++			if(ID >= 0)
++			{
++				id = ID;
++				name = "RESERVED/Sounds/ID" + this.ID.ToString();
++				LogManager.Instance.Write("SoundSystem: Loading sound {0}", filename);
++			}
+ 		}
+ 		
+ 		/// <summary>
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-21 21:38:32 UTC (rev 8)
++++ trunk/AGES/SoundManager.cs	2005-05-25 15:33:39 UTC (rev 9)
+@@ -20,12 +20,12 @@
+ #endregion
+ 
+ // Some general remarks and todos
+-// TODO: split buffer and source to prevent more filesystem access than needed
++// TODO: split buffer and source
+ // TODO: Music class for streaming long files
+-// TODO: Threading
+ 
+ using System;
+ using System.Collections;
++using System.Threading;
+ using Axiom.Core;
+ using Axiom.Graphics;
+ using Axiom.MathLib;
+@@ -78,6 +78,7 @@
+ 		/// Constructor
+ 		/// </summary>
+ 		public SoundManager() {
++			soundlist.Add(null);
+ 			Root.Instance.FrameStarted += new FrameEvent(FrameUpdate);
+ 		}
+ 	
+@@ -109,15 +110,48 @@
+ 		public abstract Sound LoadSound(string filename, short type);
+ 		
+ 		/// <summary>
++		/// Load a sound from the common resource (defined in EngineConfig.xml) in a new, paralel thread.
++		/// (Currently only for DirectSound)
++		/// </summary>
++		/// <param name="filename">The sound's filename, extension is used to determine the encoding</param>
++		/// <param name="type">The sound type (Simple or 3D)</param>
++		/// <returns>The ID of the sound, so it can be called using <see cref="GetSound">GetSound()</see></returns>
++		public virtual int PreLoadSound(string filename, short type)
++		{
++			Axiom.SoundSystems.LoadInfo info = new Axiom.SoundSystems.LoadInfo(filename, lastid, type);
++			if(!ThreadPool.QueueUserWorkItem(new WaitCallback(ThreadedLoadSound), info))
++			{
++				throw new AxiomException("Unable to queue thread for preloading");
++			}
++			
++			// update the ID counter
++			lastid++;
++			
++			return (lastid-1);			
++		}
++		
++		/// <summary>
++		/// Entry point for the loading thread
++		/// </summary>
++		/// <param name="stateInfo">State information, used to access the filename, id and type of the new sound</param>
++		protected abstract void ThreadedLoadSound (object stateInfo);
++		
++		/// <summary>
+ 		/// Get a previously loaded sound
+ 		/// </summary>
+ 		/// <param name="ID">The sound's ID</param>
+ 		/// <returns>The sound SceneObject requested or null if it's not found</returns>
+ 		public virtual Sound GetSound(int ID)
+ 		{
+-			if(ID < soundlist.Count)
++			if(ID < (soundlist.Count-1))
+ 			{
+-				return (Sound)soundlist[ID];
++				Sound thissound;
++				do
++				{
++					thissound = (Sound)soundlist[ID];
++				} while(thissound == null );
++				
++				return thissound;
+ 			} else {
+ 				return null;
+ 			}
+@@ -132,7 +166,8 @@
+ 		{
+ 			foreach(Sound sound in soundlist)
+ 			{
+-				sound.UpdatePosition();
++				if(sound != null)
++					sound.UpdatePosition();
+ 			}
+ 		}
+ 		
+
+
+
+From seaeagle1 at sheep.berlios.de  Thu May 26 13:49:26 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Thu, 26 May 2005 13:49:26 +0200
+Subject: [Agex-svn] r10 - trunk
+Message-ID: <200505261149.j4QBnQ1G013062@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-26 13:49:25 +0200 (Thu, 26 May 2005)
+New Revision: 10
+
+Added:
+   trunk/App.ico
+   trunk/AssemblyInfo.cs
+   trunk/Frame.cs
+   trunk/Header.cs
+   trunk/MP3Stream.cs
+   trunk/dnpb.exe
+   trunk/prebuild.xml
+Log:
+mp3.NET mp3 decoder import
+
+Added: trunk/App.ico
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/App.ico
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Added: trunk/AssemblyInfo.cs
+===================================================================
+--- trunk/AssemblyInfo.cs	2005-05-25 15:33:39 UTC (rev 9)
++++ trunk/AssemblyInfo.cs	2005-05-26 11:49:25 UTC (rev 10)
+@@ -0,0 +1,58 @@
++using System.Reflection;
++using System.Runtime.CompilerServices;
++
++//
++// General Information about an assembly is controlled through the following 
++// set of attributes. Change these attribute values to modify the information
++// associated with an assembly.
++//
++[assembly: AssemblyTitle("")]
++[assembly: AssemblyDescription("")]
++[assembly: AssemblyConfiguration("")]
++[assembly: AssemblyCompany("")]
++[assembly: AssemblyProduct("")]
++[assembly: AssemblyCopyright("")]
++[assembly: AssemblyTrademark("")]
++[assembly: AssemblyCulture("")]		
++
++//
++// Version information for an assembly consists of the following four values:
++//
++//      Major Version
++//      Minor Version 
++//      Build Number
++//      Revision
++//
++// You can specify all the values or you can default the Revision and Build Numbers 
++// by using the '*' as shown below:
++
++[assembly: AssemblyVersion("1.0.*")]
++
++//
++// In order to sign your assembly you must specify a key to use. Refer to the 
++// Microsoft .NET Framework documentation for more information on assembly signing.
++//
++// Use the attributes below to control which key is used for signing. 
++//
++// Notes: 
++//   (*) If no key is specified, the assembly is not signed.
++//   (*) KeyName refers to a key that has been installed in the Crypto Service
++//       Provider (CSP) on your machine. KeyFile refers to a file which contains
++//       a key.
++//   (*) If the KeyFile and the KeyName values are both specified, the 
++//       following processing occurs:
++//       (1) If the KeyName can be found in the CSP, that key is used.
++//       (2) If the KeyName does not exist and the KeyFile does exist, the key 
++//           in the KeyFile is installed into the CSP and used.
++//   (*) In order to create a KeyFile, you can use the sn.exe (Strong Name) utility.
++//       When specifying the KeyFile, the location of the KeyFile should be
++//       relative to the project output directory which is
++//       %Project Directory%\obj\<configuration>. For example, if your KeyFile is
++//       located in the project directory, you would specify the AssemblyKeyFile 
++//       attribute as [assembly: AssemblyKeyFile("..\\..\\mykey.snk")]
++//   (*) Delay Signing is an advanced option - see the Microsoft .NET Framework
++//       documentation for more information on this.
++//
++[assembly: AssemblyDelaySign(false)]
++[assembly: AssemblyKeyFile("")]
++[assembly: AssemblyKeyName("")]
+
+Added: trunk/Frame.cs
+===================================================================
+--- trunk/Frame.cs	2005-05-25 15:33:39 UTC (rev 9)
++++ trunk/Frame.cs	2005-05-26 11:49:25 UTC (rev 10)
+@@ -0,0 +1,492 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.IO;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Class1.
++	/// </summary>
++	public class Frame
++	{
++
++		public class Granule
++		{
++			public Channel[] channels;
++		}
++
++		public class Channel
++		{
++			public int part_23_length;
++			public int big_value;
++			public int global_gain;
++			public int scalefac_compress;
++			public int window_switching_flag;
++			public int block_type;
++			public int mixed_block_flag;
++			public Region[] regions;
++			public Window[] windows;
++			public int region0_count;
++			public int region1_count;
++			public int preflag;
++			public int scalefac_scale;
++			public int countltable_select;
++
++			public int slen1;
++			public int slen2;
++			public int slen3;
++			public int slen4;
++			public int nrsfb1;
++			public int nrsfb2;
++			public int nrsfb3;
++			public int nrsfb4;
++			public short id;
++		}
++
++		public class Region
++		{
++			public int table_select;
++		}
++
++		public class Window
++		{
++			public int subblock_gain;
++		}
++
++		public Header header;
++		private byte[] sidedata;
++		private Stream maindata;
++		private Stream source;
++		public int main_data_begin;
++		private bool[][] scfsi = new bool[2][];
++		private Granule[] granules;
++		private int[][] part_23_length = new int[2][];
++		private int[][] big_values = new int[2][];
++		private int[][] global_gains = new int[2][];
++		private int[][] sf_compress = new int[2][];
++
++		public Frame(Header frameheader, Stream sourceStream)
++		{
++			scfsi[0] = new bool[4];
++			scfsi[1] = new bool[4];
++			part_23_length[0] = new int[2];
++			part_23_length[1] = new int[2];
++			big_values[0] = new int[2];
++			big_values[1] = new int[2];
++			global_gains[0] = new int[2];
++			global_gains[1] = new int[2];
++			sf_compress[0] = new int[2];
++			sf_compress[1] = new int[2];
++			
++			header = frameheader;
++			source = sourceStream;
++			
++			// let's get our frame's data
++			byte[] data = new byte[header.framelength];
++			long org_pos = source.Position;
++			int headlen = (header.crc) ? 6 : 4;
++			source.Seek(header.position+headlen, SeekOrigin.Begin);
++			source.Read(data, 0, header.framelength-headlen);
++			source.Seek(org_pos, SeekOrigin.Begin);
++
++			// split data
++
++			// select sidedata length
++			int sidedata_len = 0;
++			if(header.mpegversion == Header.MPEG_V1)
++			{
++				if(header.channelmode == Header.MONO)
++				{
++					sidedata_len = 17;
++				} 
++				else 
++				{
++					sidedata_len = 32;
++				}
++			} 
++			else 
++			{
++				if(header.channelmode == Header.MONO)
++				{
++					sidedata_len = 9;
++				} 
++				else 
++				{
++					sidedata_len = 17;
++				}
++			}
++
++			// init buffers
++			sidedata = new byte[sidedata_len];
++			byte[] mdata = new byte[data.Length - sidedata_len];
++
++			// write the data into the buffers
++			MemoryStream audiodata = new MemoryStream(data);
++			audiodata.Read(sidedata, 0, (int)sidedata.Length);
++			audiodata.Read(mdata, 0, (int)mdata.Length);
++
++			// create stream
++			maindata = new MemoryStream(mdata);
++
++			Parse_sidedata();
++		}
++
++		private void Parse_sidedata()
++		{
++			// retrieve main_data_begin
++			BitReader reader = new BitReader(sidedata);
++			if(header.mpegversion == Header.MPEG_V1)
++				main_data_begin = reader.ReadBits(9);
++			else
++				main_data_begin = reader.ReadBits(8);
++
++			// skip private bits
++			if(header.channelmode == Header.MONO)
++				reader.SeekF(6);
++			else
++				reader.SeekF(5);
++
++			// fill scalefactors information array
++			if(header.mpegversion == Header.MPEG_V1)
++			{
++				int i;
++				for(i=0; i<4; i++)
++				{
++					scfsi[0][i] = (reader.ReadBits(1) == 0) ? false : true;
++				}
++				if(header.channelmode != Header.MONO)
++				{
++					for(i=0; i<4; i++)
++					{
++						scfsi[1][i] = (reader.ReadBits(1) == 0) ? false : true;
++					}
++				}
++			}
++
++			granules = (header.mpegversion == Header.MPEG_V1) ? new Granule[2] : new Granule[1];
++			foreach(Granule g in granules)
++			{
++				short chid = 0;
++				g.channels = (header.channelmode == Header.MONO) ? new Channel[1] : new Channel[2];
++				foreach(Channel c in g.channels)
++				{
++					c.id = chid;
++					chid++;
++
++					c.part_23_length = reader.ReadBits(12);
++					c.big_value = reader.ReadBits(9);
++					c.global_gain = reader.ReadBits(8);
++
++					int sfc_len = (header.mpegversion == Header.MPEG_V1) ? 4 : 9;
++					c.scalefac_compress = reader.ReadBits(sfc_len);
++
++					c.window_switching_flag = reader.ReadBits(1);
++					if(c.window_switching_flag == 1)
++					{
++						c.block_type = reader.ReadBits(2);
++						c.mixed_block_flag = reader.ReadBits(1);
++
++						c.regions = new Region[2];
++						foreach(Region r in c.regions)
++						{
++							r.table_select = reader.ReadBits(5);
++						}
++
++						c.windows = new Window[3];
++						foreach(Window w in c.windows)
++						{
++							w.subblock_gain = reader.ReadBits(3);
++						}
++					}  
++					else 
++					{
++						c.regions = new Region[3];
++						foreach(Region r in c.regions)
++						{
++							r.table_select = reader.ReadBits(5);
++						}
++
++						c.region0_count = reader.ReadBits(4);
++						c.region1_count = reader.ReadBits(3);
++					}
++
++					if(header.mpegversion == Header.MPEG_V1)
++						c.preflag = reader.ReadBits(1);
++
++					c.scalefac_scale = reader.ReadBits(1);
++					c.countltable_select = reader.ReadBits(1);
++
++
++					if(header.mpegversion == Header.MPEG_V1)
++					{
++						switch(c.scalefac_compress)
++						{
++							case 0:
++							case 1:
++							case 2:
++							case 3:
++								c.slen1 = 0;
++								break;
++							case 4:
++							case 11:
++							case 12:
++							case 13:
++								c.slen1 = 3;
++								break;
++							case 5:
++							case 6:
++							case 7:
++								c.slen1 = 1;
++								break;
++							case 8:
++							case 9:
++							case 10:
++								c.slen1 = 2;
++								break;
++							case 14:
++							case 15:
++								c.slen1 = 4;
++								break;
++						}
++						switch(c.scalefac_compress)
++						{
++							case 0:
++							case 4:
++								c.slen2 = 0;
++								break;
++							case 1:
++							case 5:
++							case 8:
++							case 11:
++								c.slen2 = 1;
++								break;
++							case 2:
++							case 6:
++							case 9:
++							case 12:
++							case 14:
++								c.slen2 = 1;
++								break;
++							case 3:
++							case 7:
++							case 10:
++							case 13:
++							case 15:
++								c.slen2 = 3;
++								break;
++						}
++
++					}	 
++					else 
++					{	 // MPEG2
++						
++						if(!( (header.modeext == Header.BAND8TO31 | header.modeext == Header.BAND16TO31) && (c.id == 1) ))
++						{
++							if(c.scalefac_compress < 400)
++							{
++								c.slen1 = (c.scalefac_compress >> 4) / 5;
++								c.slen2 = (c.scalefac_compress >> 4) % 5;
++								c.slen3 = (c.scalefac_compress % 16) >> 2;
++								c.slen4 = (c.scalefac_compress % 4);
++								c.preflag = 0;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 6;
++									c.nrsfb2 = 5;
++									c.nrsfb3 = 5;
++									c.nrsfb4 = 5;
++								} 
++								else 
++								{
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
++									} 
++									else 
++									{
++										c.nrsfb1 = 6;
++										c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
++									}
++								}
++							} 
++							else if(c.scalefac_compress < 500) 
++							{
++								c.slen1 = ((c.scalefac_compress-400) >> 2)/5;
++								c.slen2 = ((c.scalefac_compress-400) >> 2)%5;
++								c.slen3 = (c.scalefac_compress-400)%4;
++								c.slen4 = 0;
++								c.preflag = 0;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 6;
++									c.nrsfb2 = 5;
++									c.nrsfb3 = 7;
++									c.nrsfb4 = 3;
++								} 
++								else 
++								{
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = 9;
++										c.nrsfb2 = 9;
++										c.nrsfb3 = 12;
++										c.nrsfb4 = 6;
++									} 
++									else 
++									{
++										c.nrsfb1 = 6;
++										c.nrsfb2 = 9;
++										c.nrsfb3 = 12;
++										c.nrsfb4 = 6;
++									}
++								}
++							} 
++							else if(c.scalefac_compress < 512) 
++							{
++								c.slen1 = (c.scalefac_compress-500)/3;
++								c.slen2 = (c.scalefac_compress-500)%3;
++								c.slen3 = 0;
++								c.slen4 = 0;
++								c.preflag = 1;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 11;
++									c.nrsfb2 = 10;
++									c.nrsfb3 = 0;
++									c.nrsfb4 = 0;
++								} 
++								else 
++								{
++									c.nrsfb2 = 18;
++									c.nrsfb3 = 0;
++									c.nrsfb4 = 0;
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = 18;
++									} 
++									else 
++									{
++										c.nrsfb1 = 15;
++									}
++								}
++							}
++						}  
++						else 
++						{
++
++						}
++					}
++				}
++			}			
++		}
++
++		//TODO: CRC check
++	}
++
++	public class BitReader
++	{
++		private byte[] bytedata;
++		private int pos;
++
++		public BitReader (byte[] data)
++		{
++			this.bytedata = data;
++			pos = 0;
++		}
++
++		public int Position
++		{
++			get
++			{
++				return pos;
++			}
++			set
++			{
++				pos = value;
++			}
++		}
++
++		public void SeekF( int nr )
++		{
++			pos += nr;
++		}
++
++		public void SeekB( int nr )
++		{
++			pos -= nr;
++			if(pos < 0)
++			{
++				pos = 0;
++			}
++		}
++
++		public int ReadBits(int nr)
++		{
++			int bytenr = Convert.ToInt32(Math.Floor(pos / 8));
++			int i;
++			int bytepos = pos - (bytenr * 8);
++			int returnval = 0;
++			for(i = 0; i < nr; i++)
++			{
++				int bitselector = 0;
++				switch(bytepos)
++				{
++					case 0:
++						bitselector = 128;
++						break;
++					case 1:
++						bitselector = 64;
++						break;
++					case 2:
++						bitselector = 32;
++						break;
++					case 3:
++						bitselector = 16;
++						break;
++					case 4:
++						bitselector = 8;
++						break;
++					case 5:
++						bitselector = 4;
++						break;
++					case 6:
++						bitselector = 2;
++						break;
++					case 7:
++						bitselector = 1;
++						break;
++					case 8:
++						bytenr++;
++						bytepos = 0;
++						bitselector = 128;
++						break;
++				}
++				if(bytenr >= bytedata.Length)
++				{
++					break;
++				}
++				returnval += ((bytedata[bytenr] & bitselector) == bitselector) ? Convert.ToInt32(Math.Pow(2, nr - (i+1))) : 0;
++				bytepos++;
++			}
++			return returnval;
++		}
++	}
++}
+
+Added: trunk/Header.cs
+===================================================================
+--- trunk/Header.cs	2005-05-25 15:33:39 UTC (rev 9)
++++ trunk/Header.cs	2005-05-26 11:49:25 UTC (rev 10)
+@@ -0,0 +1,328 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.Collections;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Header.
++	/// </summary>
++	public class Header
++	{
++		public byte[] head;
++
++		public long position;
++
++		public short mpegversion;
++		public const short MPEG_V25 = 3;
++		public const short MPEG_V2 = 2;
++		public const short MPEG_V1 = 1;
++
++		public short mpeglayer;
++		public const short LAYER3 = 3;
++		public const short LAYER2 = 2;
++		public const short LAYER1 = 1;
++
++		public bool crc;
++		public byte[] crcbytes = new byte[2];
++
++		private int[][][] b_rates;
++		public int bitrate;
++
++		public bool padding;
++
++		public int frequency;
++
++		public short channelmode;
++		public const short MONO = 1;
++		public const short DUAL_CHANNEL = 2;
++		public const short JOINT_STEREO = 3;
++		public const short STEREO = 4;
++
++		public short modeext;
++		public const short BAND4TO31 = 1;
++		public const short BAND8TO31 = 2;
++		public const short BAND12TO31 = 3;
++		public const short BAND16TO31 = 4;
++		public bool stereoInt;
++		public bool stereoMS;
++
++		public int framelength;
++
++		public Header (byte[] head, long position)
++		{
++			b_rates = new int[3][][];
++			b_rates[0] = new int[3][];
++			b_rates[1] = new int[3][];
++			b_rates[0][0] = new int[]{0,32,64,96,128,160,192,224,256,288,320,352,384,416,448};
++			b_rates[0][1] = new int[]{0,32,48,56,64,80,96,112,128,160,192,224,256,320,384};
++			b_rates[0][2] = new int[]{0,32,40,48,56,64,80,96,112,128,160,192,224,256,320};
++			b_rates[1][0] = new int[]{0,32,48,56,64,80,96,112,128,144,160,176,192,224,256};
++			b_rates[1][1] = new int[]{0,8,16,24,32,40,48,56,64,80,96,112,128,144,160};
++			b_rates[1][2] = b_rates[1][1];
++			b_rates[2] = b_rates[1];
++
++			this.head = head;
++			this.position = position;
++		}
++
++		public long NextFrame()
++		{
++			long newpos = position + framelength;
++			return newpos;
++		}
++
++		public override String ToString()
++		{
++			String output = "";
++			switch(mpegversion)
++			{
++				case MPEG_V1:
++					output += "MPEG 1 ";
++					break;
++				case MPEG_V2:
++					output += "MPEG 2 ";
++					break;
++				case MPEG_V25:
++					output += "MPEG 2.5 ";
++					break;
++			}
++			switch(mpeglayer)
++			{
++				case LAYER1:
++					output += "Layer I ";
++					break;
++				case LAYER2:
++					output += "Layer II ";
++					break;
++				case LAYER3:
++					output += "Layer III ";
++					break;
++			}
++			if(crc)
++				output += "CRC protected ";
++			if(bitrate > 0)
++				output += bitrate.ToString() + "kbps ";
++			if(frequency > 0)
++				output += frequency.ToString() + "Hz ";
++			switch(channelmode)
++			{
++				case MONO:
++					output += "Mono ";
++					break;
++				case DUAL_CHANNEL:
++					output += "Dual Channel ";
++					break;
++				case JOINT_STEREO:
++					output += "Joint Stereo ";
++					break;
++				case STEREO:
++					output += "Stereo ";
++					break;
++			}
++			if(padding)
++				output += "Padded ";
++
++			return output;
++		}
++		
++		public bool Init()
++		{
++			// extract version
++			switch(head[1] & 24)
++			{
++				case 0:
++					mpegversion = MPEG_V25;
++					break;
++				case 16:
++					mpegversion = MPEG_V2;
++					break;
++				case 24:
++					mpegversion = MPEG_V1;
++					break;
++				default:
++					return false;
++			}
++
++			// extract layer
++			switch(head[1] & 6)
++			{
++				case 2:
++					mpeglayer = LAYER3;
++					break;
++				case 4:
++					mpeglayer = LAYER2;
++					break;
++				case 6:
++					mpeglayer = LAYER1;
++					break;
++				default:
++					return false;
++			}
++
++			// crc protection?
++			switch(head[1] & 1)
++			{
++				case 1:
++					crc = false;
++					break;
++				case 0:
++					crc = true;
++					break;
++				default:
++					return false;
++			}
++
++			// extract bitrate
++			int bitrate_index = (head[2] >> 4) & 15;
++			bitrate = b_rates[(mpegversion-1)][(mpeglayer-1)][bitrate_index];
++			if(bitrate <= 0)
++				return false;
++
++			// extract sampling frequency
++			switch(head[2] & 12)
++			{
++				case 0:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 44100;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 22050;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 11025;
++					}
++					break;
++				case 4:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 48000;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 24000;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 12000;
++					}
++					break;
++				case 8:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 32000;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 16000;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 8000;
++					}
++					break;
++				default:
++					return false;
++			}
++
++			// padded frame or not?
++			switch(head[2] & 2)
++			{
++				case 2:
++					padding = true;
++					break;
++				case 0:
++					padding = false;
++					break;
++				default:
++					return false;
++			}
++
++			// extract channel mode
++			switch(head[3] & 192)
++			{
++				case 0:				  
++					channelmode = STEREO;
++					break;
++				case 64:
++					channelmode = JOINT_STEREO;
++					break;
++				case 128:
++					channelmode = DUAL_CHANNEL;
++					break;
++				case 192:
++					channelmode = MONO;
++					break;
++				default:
++					return false;
++			}
++
++			// mode extension for joint stereo
++			if( channelmode == JOINT_STEREO )
++			{
++				switch(head[3] & 48)
++				{
++					case 0:
++						modeext = BAND4TO31;
++						stereoInt = false;
++						stereoMS = false;
++						break;
++					case 16:
++						modeext = BAND8TO31;
++						stereoInt = true;
++						stereoMS = false;
++						break;
++					case 32:
++						modeext = BAND12TO31;
++						stereoInt = false;
++						stereoMS = true;
++						break;
++					case 48:
++						modeext = BAND16TO31;
++						stereoInt = true;
++						stereoMS = true;
++						break;
++					default:
++						return false;
++				}
++			}
++
++			// calc framelength
++			int padding_int = (padding) ? 1 : 0;
++			if(mpegversion == MPEG_V1)
++			{
++				
++				framelength = ((1152*bitrate*1000)/frequency)/8 + padding_int;
++			} 
++			else 
++			{
++				framelength = ((576*bitrate*1000)/frequency)/8 + padding_int;
++			}
++
++			//throw new Exception();
++
++			return true;
++		}
++	}
++}
+\ No newline at end of file
+
+Added: trunk/MP3Stream.cs
+===================================================================
+--- trunk/MP3Stream.cs	2005-05-25 15:33:39 UTC (rev 9)
++++ trunk/MP3Stream.cs	2005-05-26 11:49:25 UTC (rev 10)
+@@ -0,0 +1,186 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.IO;
++using System.Collections;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Class1.
++	/// </summary>
++	class MP3Stream
++	{
++		/// <summary>
++		/// The main entry point for the application.
++		/// </summary>
++		[STAThread]
++		static void Main(string[] args)
++		{
++			//HACK: test file
++			MP3Stream mp3 = new MP3Stream(new FileStream("growl.mp3", FileMode.Open));
++		}
++
++		private Stream source;
++		ArrayList headerstream = new ArrayList();
++		byte[] comparebuffer = new byte[4];
++		int currentframe = 0;
++
++		public MP3Stream (Stream source)
++		{
++			source.Seek(0, SeekOrigin.Begin);
++			this.source = source;
++			SeekHeader();
++			Frame firstframe = new Frame((Header)headerstream[0], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[1], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[2], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[3], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[4], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++		}
++
++		public int Frequency
++		{
++			get
++			{
++				return ((Header)headerstream[0]).frequency;
++			}
++		}
++
++		public short Channels
++		{
++			get
++			{
++				return (((Header)headerstream[0]).channelmode == Header.MONO) ? (short)1 : (short)2;
++			}
++		}
++
++		public int ReadFrame(byte[] buffer)
++		{
++			buffer = new byte[((Header)headerstream[currentframe]).framelength];
++			Frame thisframe = new Frame((Header)headerstream[currentframe], source);
++			//int read = thisframe.Decode(buffer);
++			currentframe++;
++			return 0;
++		}
++
++		private void SeekHeader()
++		{
++			byte[] buffer = new byte[4];
++			do
++			{
++				// read 4 bytes (possible header)
++				int read = source.Read(buffer, 0, 4);
++
++				// less than 4 bytes read -> EOF
++				if(read < 4)
++				{
++					break;
++				}
++
++				// check for typical header strucure
++				if(SyncCheck(buffer))
++				{
++					// load the header bytes into the header class
++					Header head = new Header(buffer, (source.Position-4));
++
++					// extract header information and do another check for invalid values
++					if(head.Init())
++					{
++						// if frame contains CRC bytes, copy them to the header
++						if(head.crc)
++						{
++							source.Read(head.crcbytes, 0, 2);
++							source.Seek(-2, SeekOrigin.Current);
++						}
++
++						// check if the frame length matches the header data
++						byte[] syncbytes = new byte[4];
++						long currentpos = source.Position;
++						source.Seek(head.NextFrame(), SeekOrigin.Begin);
++						source.Read(syncbytes, 0, 4);
++						source.Seek(-1, SeekOrigin.Current);
++						// do we have another header?
++						if(SyncCheck(syncbytes))
++						{
++							// first header?
++							if(headerstream.Count <= 0)
++							{
++								if(SyncCompare(buffer, syncbytes)) // check if MPEG Version / Layer matches those of the next header (to reduce chance to catch noise)
++								{
++									comparebuffer = (byte[])buffer.Clone();
++
++									// we have found a frame!
++									headerstream.Add(head);
++									Console.WriteLine(head.ToString());
++									//break;
++								}  
++								else 
++								{
++									// resume search where we left
++									source.Seek(currentpos, SeekOrigin.Begin);
++								}
++							
++							}   
++							else  // not the first header, so we don't do more checks to save some time 
++							{
++								// we have found a frame!
++								headerstream.Add(head);
++								//Console.WriteLine(head.ToString());
++							}  
++						}
++
++					}
++				}  
++
++				// move 1 byte per cycle (instead of 4)
++				source.Seek(-3, SeekOrigin.Current);
++
++			} while (true);
++			
++			Console.WriteLine("Frames: " + headerstream.Count.ToString());
++
++			if(headerstream.Count <= 0)
++			{
++				throw new Exception("Could not find MPEG headers");
++			}
++		}
++
++		private bool SyncCheck(byte[] buffer)
++		{
++			//      byte0 = 11111111      byte1 = 111xxxxx			    byte2 != 111111xx			  byte2 != 0000xxxx	  AND NOT	byte1 = xxx01xxx		   byte1 = xxxxx00x			 byte2 = xxxx11xx			 byte3 = xxxxxx10
++			return (buffer[0] == 255 && ((buffer[1] & 224) == 224) && ((buffer[2] & 252) != 252) && ((buffer[2] & 240) != 0) && !(((buffer[1] & 24) == 8) || ((buffer[1] & 6) == 0) || ((buffer[2] & 12) == 12) || ((buffer[3] & 3) == 2)));
++		}
++
++		private bool SyncCompare(byte[] buffera, byte[] bufferb)
++		{
++			//  equal mpeg version / layer   equal mode, copyright etc.					equal frequency
++			if( buffera[1] == bufferb[1] && (buffera[3] & 207) == (bufferb[3] & 207) && (buffera[2] & 12) == (bufferb[2] & 12) )
++			{
++				return true;
++			}
++			return false;
++		}
++	}
++}
+
+Added: trunk/dnpb.exe
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/dnpb.exe
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Added: trunk/prebuild.xml
+===================================================================
+--- trunk/prebuild.xml	2005-05-25 15:33:39 UTC (rev 9)
++++ trunk/prebuild.xml	2005-05-26 11:49:25 UTC (rev 10)
+@@ -0,0 +1,46 @@
++<?xml version="1.0" encoding="utf-8" ?> 
++<DNPreBuild xmlns="http://dnpb.sourceforge.net/schemas/dnpb-1.4.xsd">
++	<Solution name="mp3.NET">
++		<Configuration name="Debug">
++			<Options>
++			    <?if OS = "Win32" ?>
++				<CompilerDefines>DEBUG;TRACE;WIN32</CompilerDefines>
++				<?else ?>
++				<CompilerDefines>DEBUG;TRACE;POSIX</CompilerDefines>
++				<?endif ?>
++				<OptimizeCode>false</OptimizeCode>
++				<OutputPath>./bin/Debug</OutputPath>
++				<DebugInformation>true</DebugInformation>
++			</Options>
++		</Configuration>
++		
++		<Configuration name="Release">
++			<Options>
++			    <?if OS = "Win32" ?>
++				<CompilerDefines>TRACE;WIN32</CompilerDefines>
++				<?else ?>
++				<CompilerDefines>TRACE;POSIX</CompilerDefines>
++				<?endif ?>
++				<OutputPath>./bin/Release</OutputPath>
++				<OptimizeCode>true</OptimizeCode>
++				<DebugInformation>false</DebugInformation>
++			</Options>
++		</Configuration>
++		
++		<Project 
++			name="mp3.NET" 
++			type="Exe" 
++			path="./"
++			language="C#" 
++			runtime="Microsoft" 
++			icon="App.ico">
++
++			<Reference name="System" />
++			<Reference name="System.Data" />
++			
++			<Files>
++				<Match pattern="*.cs" path="./" recurse="false"/>
++			</Files>
++		</Project>
++	</Solution>
++</DNPreBuild>
+\ No newline at end of file
+
+
+
+From seaeagle1 at sheep.berlios.de  Thu May 26 13:55:20 2005
+From: seaeagle1 at sheep.berlios.de (Ilmar Kruis at BerliOS)
+Date: Thu, 26 May 2005 13:55:20 +0200
+Subject: [Agex-svn] r11 - in trunk: . mp3.NET
+Message-ID: <200505261155.j4QBtKjU013239@sheep.berlios.de>
+
+Author: seaeagle1
+Date: 2005-05-26 13:55:19 +0200 (Thu, 26 May 2005)
+New Revision: 11
+
+Added:
+   trunk/mp3.NET/
+   trunk/mp3.NET/App.ico
+   trunk/mp3.NET/AssemblyInfo.cs
+   trunk/mp3.NET/Frame.cs
+   trunk/mp3.NET/Header.cs
+   trunk/mp3.NET/MP3Stream.cs
+   trunk/mp3.NET/dnpb.exe
+   trunk/mp3.NET/prebuild.xml
+Removed:
+   trunk/App.ico
+   trunk/AssemblyInfo.cs
+   trunk/Frame.cs
+   trunk/Header.cs
+   trunk/MP3Stream.cs
+   trunk/dnpb.exe
+   trunk/prebuild.xml
+Log:
+mp3.NET import - try #2
+
+Deleted: trunk/App.ico
+===================================================================
+(Binary files differ)
+
+Deleted: trunk/AssemblyInfo.cs
+===================================================================
+--- trunk/AssemblyInfo.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/AssemblyInfo.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -1,58 +0,0 @@
+-using System.Reflection;
+-using System.Runtime.CompilerServices;
+-
+-//
+-// General Information about an assembly is controlled through the following 
+-// set of attributes. Change these attribute values to modify the information
+-// associated with an assembly.
+-//
+-[assembly: AssemblyTitle("")]
+-[assembly: AssemblyDescription("")]
+-[assembly: AssemblyConfiguration("")]
+-[assembly: AssemblyCompany("")]
+-[assembly: AssemblyProduct("")]
+-[assembly: AssemblyCopyright("")]
+-[assembly: AssemblyTrademark("")]
+-[assembly: AssemblyCulture("")]		
+-
+-//
+-// Version information for an assembly consists of the following four values:
+-//
+-//      Major Version
+-//      Minor Version 
+-//      Build Number
+-//      Revision
+-//
+-// You can specify all the values or you can default the Revision and Build Numbers 
+-// by using the '*' as shown below:
+-
+-[assembly: AssemblyVersion("1.0.*")]
+-
+-//
+-// In order to sign your assembly you must specify a key to use. Refer to the 
+-// Microsoft .NET Framework documentation for more information on assembly signing.
+-//
+-// Use the attributes below to control which key is used for signing. 
+-//
+-// Notes: 
+-//   (*) If no key is specified, the assembly is not signed.
+-//   (*) KeyName refers to a key that has been installed in the Crypto Service
+-//       Provider (CSP) on your machine. KeyFile refers to a file which contains
+-//       a key.
+-//   (*) If the KeyFile and the KeyName values are both specified, the 
+-//       following processing occurs:
+-//       (1) If the KeyName can be found in the CSP, that key is used.
+-//       (2) If the KeyName does not exist and the KeyFile does exist, the key 
+-//           in the KeyFile is installed into the CSP and used.
+-//   (*) In order to create a KeyFile, you can use the sn.exe (Strong Name) utility.
+-//       When specifying the KeyFile, the location of the KeyFile should be
+-//       relative to the project output directory which is
+-//       %Project Directory%\obj\<configuration>. For example, if your KeyFile is
+-//       located in the project directory, you would specify the AssemblyKeyFile 
+-//       attribute as [assembly: AssemblyKeyFile("..\\..\\mykey.snk")]
+-//   (*) Delay Signing is an advanced option - see the Microsoft .NET Framework
+-//       documentation for more information on this.
+-//
+-[assembly: AssemblyDelaySign(false)]
+-[assembly: AssemblyKeyFile("")]
+-[assembly: AssemblyKeyName("")]
+
+Deleted: trunk/Frame.cs
+===================================================================
+--- trunk/Frame.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/Frame.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -1,492 +0,0 @@
+-//	mp3.NET MPEG Decoder
+-//	(c) 2005, mp3.NET Developers
+-//
+-//	This library is free software; you can redistribute 
+-//	it and/or modify it under the terms of the 
+-//	GNU Lesser General Public License as published by the 
+-//	Free Software Foundation; either version 2.1 of the License, 
+-//	or (at your option) any later version.
+-//
+-//	This library is distributed in the hope that it will be useful, 
+-//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
+-//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+-//	GNU Lesser General Public License for more details.
+-//
+-//	You should have received a copy of the GNU Lesser General 
+-//	Public License along with this library; if not, write to the 
+-//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
+-//	Boston, MA 02111-1307 USA
+-
+-using System;
+-using System.IO;
+-
+-namespace MP3Net
+-{
+-	/// <summary>
+-	/// Summary description for Class1.
+-	/// </summary>
+-	public class Frame
+-	{
+-
+-		public class Granule
+-		{
+-			public Channel[] channels;
+-		}
+-
+-		public class Channel
+-		{
+-			public int part_23_length;
+-			public int big_value;
+-			public int global_gain;
+-			public int scalefac_compress;
+-			public int window_switching_flag;
+-			public int block_type;
+-			public int mixed_block_flag;
+-			public Region[] regions;
+-			public Window[] windows;
+-			public int region0_count;
+-			public int region1_count;
+-			public int preflag;
+-			public int scalefac_scale;
+-			public int countltable_select;
+-
+-			public int slen1;
+-			public int slen2;
+-			public int slen3;
+-			public int slen4;
+-			public int nrsfb1;
+-			public int nrsfb2;
+-			public int nrsfb3;
+-			public int nrsfb4;
+-			public short id;
+-		}
+-
+-		public class Region
+-		{
+-			public int table_select;
+-		}
+-
+-		public class Window
+-		{
+-			public int subblock_gain;
+-		}
+-
+-		public Header header;
+-		private byte[] sidedata;
+-		private Stream maindata;
+-		private Stream source;
+-		public int main_data_begin;
+-		private bool[][] scfsi = new bool[2][];
+-		private Granule[] granules;
+-		private int[][] part_23_length = new int[2][];
+-		private int[][] big_values = new int[2][];
+-		private int[][] global_gains = new int[2][];
+-		private int[][] sf_compress = new int[2][];
+-
+-		public Frame(Header frameheader, Stream sourceStream)
+-		{
+-			scfsi[0] = new bool[4];
+-			scfsi[1] = new bool[4];
+-			part_23_length[0] = new int[2];
+-			part_23_length[1] = new int[2];
+-			big_values[0] = new int[2];
+-			big_values[1] = new int[2];
+-			global_gains[0] = new int[2];
+-			global_gains[1] = new int[2];
+-			sf_compress[0] = new int[2];
+-			sf_compress[1] = new int[2];
+-			
+-			header = frameheader;
+-			source = sourceStream;
+-			
+-			// let's get our frame's data
+-			byte[] data = new byte[header.framelength];
+-			long org_pos = source.Position;
+-			int headlen = (header.crc) ? 6 : 4;
+-			source.Seek(header.position+headlen, SeekOrigin.Begin);
+-			source.Read(data, 0, header.framelength-headlen);
+-			source.Seek(org_pos, SeekOrigin.Begin);
+-
+-			// split data
+-
+-			// select sidedata length
+-			int sidedata_len = 0;
+-			if(header.mpegversion == Header.MPEG_V1)
+-			{
+-				if(header.channelmode == Header.MONO)
+-				{
+-					sidedata_len = 17;
+-				} 
+-				else 
+-				{
+-					sidedata_len = 32;
+-				}
+-			} 
+-			else 
+-			{
+-				if(header.channelmode == Header.MONO)
+-				{
+-					sidedata_len = 9;
+-				} 
+-				else 
+-				{
+-					sidedata_len = 17;
+-				}
+-			}
+-
+-			// init buffers
+-			sidedata = new byte[sidedata_len];
+-			byte[] mdata = new byte[data.Length - sidedata_len];
+-
+-			// write the data into the buffers
+-			MemoryStream audiodata = new MemoryStream(data);
+-			audiodata.Read(sidedata, 0, (int)sidedata.Length);
+-			audiodata.Read(mdata, 0, (int)mdata.Length);
+-
+-			// create stream
+-			maindata = new MemoryStream(mdata);
+-
+-			Parse_sidedata();
+-		}
+-
+-		private void Parse_sidedata()
+-		{
+-			// retrieve main_data_begin
+-			BitReader reader = new BitReader(sidedata);
+-			if(header.mpegversion == Header.MPEG_V1)
+-				main_data_begin = reader.ReadBits(9);
+-			else
+-				main_data_begin = reader.ReadBits(8);
+-
+-			// skip private bits
+-			if(header.channelmode == Header.MONO)
+-				reader.SeekF(6);
+-			else
+-				reader.SeekF(5);
+-
+-			// fill scalefactors information array
+-			if(header.mpegversion == Header.MPEG_V1)
+-			{
+-				int i;
+-				for(i=0; i<4; i++)
+-				{
+-					scfsi[0][i] = (reader.ReadBits(1) == 0) ? false : true;
+-				}
+-				if(header.channelmode != Header.MONO)
+-				{
+-					for(i=0; i<4; i++)
+-					{
+-						scfsi[1][i] = (reader.ReadBits(1) == 0) ? false : true;
+-					}
+-				}
+-			}
+-
+-			granules = (header.mpegversion == Header.MPEG_V1) ? new Granule[2] : new Granule[1];
+-			foreach(Granule g in granules)
+-			{
+-				short chid = 0;
+-				g.channels = (header.channelmode == Header.MONO) ? new Channel[1] : new Channel[2];
+-				foreach(Channel c in g.channels)
+-				{
+-					c.id = chid;
+-					chid++;
+-
+-					c.part_23_length = reader.ReadBits(12);
+-					c.big_value = reader.ReadBits(9);
+-					c.global_gain = reader.ReadBits(8);
+-
+-					int sfc_len = (header.mpegversion == Header.MPEG_V1) ? 4 : 9;
+-					c.scalefac_compress = reader.ReadBits(sfc_len);
+-
+-					c.window_switching_flag = reader.ReadBits(1);
+-					if(c.window_switching_flag == 1)
+-					{
+-						c.block_type = reader.ReadBits(2);
+-						c.mixed_block_flag = reader.ReadBits(1);
+-
+-						c.regions = new Region[2];
+-						foreach(Region r in c.regions)
+-						{
+-							r.table_select = reader.ReadBits(5);
+-						}
+-
+-						c.windows = new Window[3];
+-						foreach(Window w in c.windows)
+-						{
+-							w.subblock_gain = reader.ReadBits(3);
+-						}
+-					}  
+-					else 
+-					{
+-						c.regions = new Region[3];
+-						foreach(Region r in c.regions)
+-						{
+-							r.table_select = reader.ReadBits(5);
+-						}
+-
+-						c.region0_count = reader.ReadBits(4);
+-						c.region1_count = reader.ReadBits(3);
+-					}
+-
+-					if(header.mpegversion == Header.MPEG_V1)
+-						c.preflag = reader.ReadBits(1);
+-
+-					c.scalefac_scale = reader.ReadBits(1);
+-					c.countltable_select = reader.ReadBits(1);
+-
+-
+-					if(header.mpegversion == Header.MPEG_V1)
+-					{
+-						switch(c.scalefac_compress)
+-						{
+-							case 0:
+-							case 1:
+-							case 2:
+-							case 3:
+-								c.slen1 = 0;
+-								break;
+-							case 4:
+-							case 11:
+-							case 12:
+-							case 13:
+-								c.slen1 = 3;
+-								break;
+-							case 5:
+-							case 6:
+-							case 7:
+-								c.slen1 = 1;
+-								break;
+-							case 8:
+-							case 9:
+-							case 10:
+-								c.slen1 = 2;
+-								break;
+-							case 14:
+-							case 15:
+-								c.slen1 = 4;
+-								break;
+-						}
+-						switch(c.scalefac_compress)
+-						{
+-							case 0:
+-							case 4:
+-								c.slen2 = 0;
+-								break;
+-							case 1:
+-							case 5:
+-							case 8:
+-							case 11:
+-								c.slen2 = 1;
+-								break;
+-							case 2:
+-							case 6:
+-							case 9:
+-							case 12:
+-							case 14:
+-								c.slen2 = 1;
+-								break;
+-							case 3:
+-							case 7:
+-							case 10:
+-							case 13:
+-							case 15:
+-								c.slen2 = 3;
+-								break;
+-						}
+-
+-					}	 
+-					else 
+-					{	 // MPEG2
+-						
+-						if(!( (header.modeext == Header.BAND8TO31 | header.modeext == Header.BAND16TO31) && (c.id == 1) ))
+-						{
+-							if(c.scalefac_compress < 400)
+-							{
+-								c.slen1 = (c.scalefac_compress >> 4) / 5;
+-								c.slen2 = (c.scalefac_compress >> 4) % 5;
+-								c.slen3 = (c.scalefac_compress % 16) >> 2;
+-								c.slen4 = (c.scalefac_compress % 4);
+-								c.preflag = 0;
+-								if(c.block_type != 10)
+-								{
+-									c.nrsfb1 = 6;
+-									c.nrsfb2 = 5;
+-									c.nrsfb3 = 5;
+-									c.nrsfb4 = 5;
+-								} 
+-								else 
+-								{
+-									if(c.mixed_block_flag == 0)
+-									{
+-										c.nrsfb1 = c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
+-									} 
+-									else 
+-									{
+-										c.nrsfb1 = 6;
+-										c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
+-									}
+-								}
+-							} 
+-							else if(c.scalefac_compress < 500) 
+-							{
+-								c.slen1 = ((c.scalefac_compress-400) >> 2)/5;
+-								c.slen2 = ((c.scalefac_compress-400) >> 2)%5;
+-								c.slen3 = (c.scalefac_compress-400)%4;
+-								c.slen4 = 0;
+-								c.preflag = 0;
+-								if(c.block_type != 10)
+-								{
+-									c.nrsfb1 = 6;
+-									c.nrsfb2 = 5;
+-									c.nrsfb3 = 7;
+-									c.nrsfb4 = 3;
+-								} 
+-								else 
+-								{
+-									if(c.mixed_block_flag == 0)
+-									{
+-										c.nrsfb1 = 9;
+-										c.nrsfb2 = 9;
+-										c.nrsfb3 = 12;
+-										c.nrsfb4 = 6;
+-									} 
+-									else 
+-									{
+-										c.nrsfb1 = 6;
+-										c.nrsfb2 = 9;
+-										c.nrsfb3 = 12;
+-										c.nrsfb4 = 6;
+-									}
+-								}
+-							} 
+-							else if(c.scalefac_compress < 512) 
+-							{
+-								c.slen1 = (c.scalefac_compress-500)/3;
+-								c.slen2 = (c.scalefac_compress-500)%3;
+-								c.slen3 = 0;
+-								c.slen4 = 0;
+-								c.preflag = 1;
+-								if(c.block_type != 10)
+-								{
+-									c.nrsfb1 = 11;
+-									c.nrsfb2 = 10;
+-									c.nrsfb3 = 0;
+-									c.nrsfb4 = 0;
+-								} 
+-								else 
+-								{
+-									c.nrsfb2 = 18;
+-									c.nrsfb3 = 0;
+-									c.nrsfb4 = 0;
+-									if(c.mixed_block_flag == 0)
+-									{
+-										c.nrsfb1 = 18;
+-									} 
+-									else 
+-									{
+-										c.nrsfb1 = 15;
+-									}
+-								}
+-							}
+-						}  
+-						else 
+-						{
+-
+-						}
+-					}
+-				}
+-			}			
+-		}
+-
+-		//TODO: CRC check
+-	}
+-
+-	public class BitReader
+-	{
+-		private byte[] bytedata;
+-		private int pos;
+-
+-		public BitReader (byte[] data)
+-		{
+-			this.bytedata = data;
+-			pos = 0;
+-		}
+-
+-		public int Position
+-		{
+-			get
+-			{
+-				return pos;
+-			}
+-			set
+-			{
+-				pos = value;
+-			}
+-		}
+-
+-		public void SeekF( int nr )
+-		{
+-			pos += nr;
+-		}
+-
+-		public void SeekB( int nr )
+-		{
+-			pos -= nr;
+-			if(pos < 0)
+-			{
+-				pos = 0;
+-			}
+-		}
+-
+-		public int ReadBits(int nr)
+-		{
+-			int bytenr = Convert.ToInt32(Math.Floor(pos / 8));
+-			int i;
+-			int bytepos = pos - (bytenr * 8);
+-			int returnval = 0;
+-			for(i = 0; i < nr; i++)
+-			{
+-				int bitselector = 0;
+-				switch(bytepos)
+-				{
+-					case 0:
+-						bitselector = 128;
+-						break;
+-					case 1:
+-						bitselector = 64;
+-						break;
+-					case 2:
+-						bitselector = 32;
+-						break;
+-					case 3:
+-						bitselector = 16;
+-						break;
+-					case 4:
+-						bitselector = 8;
+-						break;
+-					case 5:
+-						bitselector = 4;
+-						break;
+-					case 6:
+-						bitselector = 2;
+-						break;
+-					case 7:
+-						bitselector = 1;
+-						break;
+-					case 8:
+-						bytenr++;
+-						bytepos = 0;
+-						bitselector = 128;
+-						break;
+-				}
+-				if(bytenr >= bytedata.Length)
+-				{
+-					break;
+-				}
+-				returnval += ((bytedata[bytenr] & bitselector) == bitselector) ? Convert.ToInt32(Math.Pow(2, nr - (i+1))) : 0;
+-				bytepos++;
+-			}
+-			return returnval;
+-		}
+-	}
+-}
+
+Deleted: trunk/Header.cs
+===================================================================
+--- trunk/Header.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/Header.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -1,328 +0,0 @@
+-//	mp3.NET MPEG Decoder
+-//	(c) 2005, mp3.NET Developers
+-//
+-//	This library is free software; you can redistribute 
+-//	it and/or modify it under the terms of the 
+-//	GNU Lesser General Public License as published by the 
+-//	Free Software Foundation; either version 2.1 of the License, 
+-//	or (at your option) any later version.
+-//
+-//	This library is distributed in the hope that it will be useful, 
+-//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
+-//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+-//	GNU Lesser General Public License for more details.
+-//
+-//	You should have received a copy of the GNU Lesser General 
+-//	Public License along with this library; if not, write to the 
+-//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
+-//	Boston, MA 02111-1307 USA
+-
+-using System;
+-using System.Collections;
+-
+-namespace MP3Net
+-{
+-	/// <summary>
+-	/// Summary description for Header.
+-	/// </summary>
+-	public class Header
+-	{
+-		public byte[] head;
+-
+-		public long position;
+-
+-		public short mpegversion;
+-		public const short MPEG_V25 = 3;
+-		public const short MPEG_V2 = 2;
+-		public const short MPEG_V1 = 1;
+-
+-		public short mpeglayer;
+-		public const short LAYER3 = 3;
+-		public const short LAYER2 = 2;
+-		public const short LAYER1 = 1;
+-
+-		public bool crc;
+-		public byte[] crcbytes = new byte[2];
+-
+-		private int[][][] b_rates;
+-		public int bitrate;
+-
+-		public bool padding;
+-
+-		public int frequency;
+-
+-		public short channelmode;
+-		public const short MONO = 1;
+-		public const short DUAL_CHANNEL = 2;
+-		public const short JOINT_STEREO = 3;
+-		public const short STEREO = 4;
+-
+-		public short modeext;
+-		public const short BAND4TO31 = 1;
+-		public const short BAND8TO31 = 2;
+-		public const short BAND12TO31 = 3;
+-		public const short BAND16TO31 = 4;
+-		public bool stereoInt;
+-		public bool stereoMS;
+-
+-		public int framelength;
+-
+-		public Header (byte[] head, long position)
+-		{
+-			b_rates = new int[3][][];
+-			b_rates[0] = new int[3][];
+-			b_rates[1] = new int[3][];
+-			b_rates[0][0] = new int[]{0,32,64,96,128,160,192,224,256,288,320,352,384,416,448};
+-			b_rates[0][1] = new int[]{0,32,48,56,64,80,96,112,128,160,192,224,256,320,384};
+-			b_rates[0][2] = new int[]{0,32,40,48,56,64,80,96,112,128,160,192,224,256,320};
+-			b_rates[1][0] = new int[]{0,32,48,56,64,80,96,112,128,144,160,176,192,224,256};
+-			b_rates[1][1] = new int[]{0,8,16,24,32,40,48,56,64,80,96,112,128,144,160};
+-			b_rates[1][2] = b_rates[1][1];
+-			b_rates[2] = b_rates[1];
+-
+-			this.head = head;
+-			this.position = position;
+-		}
+-
+-		public long NextFrame()
+-		{
+-			long newpos = position + framelength;
+-			return newpos;
+-		}
+-
+-		public override String ToString()
+-		{
+-			String output = "";
+-			switch(mpegversion)
+-			{
+-				case MPEG_V1:
+-					output += "MPEG 1 ";
+-					break;
+-				case MPEG_V2:
+-					output += "MPEG 2 ";
+-					break;
+-				case MPEG_V25:
+-					output += "MPEG 2.5 ";
+-					break;
+-			}
+-			switch(mpeglayer)
+-			{
+-				case LAYER1:
+-					output += "Layer I ";
+-					break;
+-				case LAYER2:
+-					output += "Layer II ";
+-					break;
+-				case LAYER3:
+-					output += "Layer III ";
+-					break;
+-			}
+-			if(crc)
+-				output += "CRC protected ";
+-			if(bitrate > 0)
+-				output += bitrate.ToString() + "kbps ";
+-			if(frequency > 0)
+-				output += frequency.ToString() + "Hz ";
+-			switch(channelmode)
+-			{
+-				case MONO:
+-					output += "Mono ";
+-					break;
+-				case DUAL_CHANNEL:
+-					output += "Dual Channel ";
+-					break;
+-				case JOINT_STEREO:
+-					output += "Joint Stereo ";
+-					break;
+-				case STEREO:
+-					output += "Stereo ";
+-					break;
+-			}
+-			if(padding)
+-				output += "Padded ";
+-
+-			return output;
+-		}
+-		
+-		public bool Init()
+-		{
+-			// extract version
+-			switch(head[1] & 24)
+-			{
+-				case 0:
+-					mpegversion = MPEG_V25;
+-					break;
+-				case 16:
+-					mpegversion = MPEG_V2;
+-					break;
+-				case 24:
+-					mpegversion = MPEG_V1;
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// extract layer
+-			switch(head[1] & 6)
+-			{
+-				case 2:
+-					mpeglayer = LAYER3;
+-					break;
+-				case 4:
+-					mpeglayer = LAYER2;
+-					break;
+-				case 6:
+-					mpeglayer = LAYER1;
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// crc protection?
+-			switch(head[1] & 1)
+-			{
+-				case 1:
+-					crc = false;
+-					break;
+-				case 0:
+-					crc = true;
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// extract bitrate
+-			int bitrate_index = (head[2] >> 4) & 15;
+-			bitrate = b_rates[(mpegversion-1)][(mpeglayer-1)][bitrate_index];
+-			if(bitrate <= 0)
+-				return false;
+-
+-			// extract sampling frequency
+-			switch(head[2] & 12)
+-			{
+-				case 0:
+-					if(mpegversion == MPEG_V1)
+-					{
+-						frequency = 44100;
+-					} 
+-					else if (mpegversion == MPEG_V2) 
+-					{
+-						frequency = 22050;
+-					} 
+-					else if (mpegversion == MPEG_V25)
+-					{
+-						frequency = 11025;
+-					}
+-					break;
+-				case 4:
+-					if(mpegversion == MPEG_V1)
+-					{
+-						frequency = 48000;
+-					} 
+-					else if (mpegversion == MPEG_V2) 
+-					{
+-						frequency = 24000;
+-					} 
+-					else if (mpegversion == MPEG_V25)
+-					{
+-						frequency = 12000;
+-					}
+-					break;
+-				case 8:
+-					if(mpegversion == MPEG_V1)
+-					{
+-						frequency = 32000;
+-					} 
+-					else if (mpegversion == MPEG_V2) 
+-					{
+-						frequency = 16000;
+-					} 
+-					else if (mpegversion == MPEG_V25)
+-					{
+-						frequency = 8000;
+-					}
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// padded frame or not?
+-			switch(head[2] & 2)
+-			{
+-				case 2:
+-					padding = true;
+-					break;
+-				case 0:
+-					padding = false;
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// extract channel mode
+-			switch(head[3] & 192)
+-			{
+-				case 0:				  
+-					channelmode = STEREO;
+-					break;
+-				case 64:
+-					channelmode = JOINT_STEREO;
+-					break;
+-				case 128:
+-					channelmode = DUAL_CHANNEL;
+-					break;
+-				case 192:
+-					channelmode = MONO;
+-					break;
+-				default:
+-					return false;
+-			}
+-
+-			// mode extension for joint stereo
+-			if( channelmode == JOINT_STEREO )
+-			{
+-				switch(head[3] & 48)
+-				{
+-					case 0:
+-						modeext = BAND4TO31;
+-						stereoInt = false;
+-						stereoMS = false;
+-						break;
+-					case 16:
+-						modeext = BAND8TO31;
+-						stereoInt = true;
+-						stereoMS = false;
+-						break;
+-					case 32:
+-						modeext = BAND12TO31;
+-						stereoInt = false;
+-						stereoMS = true;
+-						break;
+-					case 48:
+-						modeext = BAND16TO31;
+-						stereoInt = true;
+-						stereoMS = true;
+-						break;
+-					default:
+-						return false;
+-				}
+-			}
+-
+-			// calc framelength
+-			int padding_int = (padding) ? 1 : 0;
+-			if(mpegversion == MPEG_V1)
+-			{
+-				
+-				framelength = ((1152*bitrate*1000)/frequency)/8 + padding_int;
+-			} 
+-			else 
+-			{
+-				framelength = ((576*bitrate*1000)/frequency)/8 + padding_int;
+-			}
+-
+-			//throw new Exception();
+-
+-			return true;
+-		}
+-	}
+-}
+\ No newline at end of file
+
+Deleted: trunk/MP3Stream.cs
+===================================================================
+--- trunk/MP3Stream.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/MP3Stream.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -1,186 +0,0 @@
+-//	mp3.NET MPEG Decoder
+-//	(c) 2005, mp3.NET Developers
+-//
+-//	This library is free software; you can redistribute 
+-//	it and/or modify it under the terms of the 
+-//	GNU Lesser General Public License as published by the 
+-//	Free Software Foundation; either version 2.1 of the License, 
+-//	or (at your option) any later version.
+-//
+-//	This library is distributed in the hope that it will be useful, 
+-//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
+-//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+-//	GNU Lesser General Public License for more details.
+-//
+-//	You should have received a copy of the GNU Lesser General 
+-//	Public License along with this library; if not, write to the 
+-//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
+-//	Boston, MA 02111-1307 USA
+-
+-using System;
+-using System.IO;
+-using System.Collections;
+-
+-namespace MP3Net
+-{
+-	/// <summary>
+-	/// Summary description for Class1.
+-	/// </summary>
+-	class MP3Stream
+-	{
+-		/// <summary>
+-		/// The main entry point for the application.
+-		/// </summary>
+-		[STAThread]
+-		static void Main(string[] args)
+-		{
+-			//HACK: test file
+-			MP3Stream mp3 = new MP3Stream(new FileStream("growl.mp3", FileMode.Open));
+-		}
+-
+-		private Stream source;
+-		ArrayList headerstream = new ArrayList();
+-		byte[] comparebuffer = new byte[4];
+-		int currentframe = 0;
+-
+-		public MP3Stream (Stream source)
+-		{
+-			source.Seek(0, SeekOrigin.Begin);
+-			this.source = source;
+-			SeekHeader();
+-			Frame firstframe = new Frame((Header)headerstream[0], source);
+-			Console.WriteLine("MDB " + firstframe.main_data_begin);
+-			firstframe = new Frame((Header)headerstream[1], source);
+-			Console.WriteLine("MDB " + firstframe.main_data_begin);
+-			firstframe = new Frame((Header)headerstream[2], source);
+-			Console.WriteLine("MDB " + firstframe.main_data_begin);
+-			firstframe = new Frame((Header)headerstream[3], source);
+-			Console.WriteLine("MDB " + firstframe.main_data_begin);
+-			firstframe = new Frame((Header)headerstream[4], source);
+-			Console.WriteLine("MDB " + firstframe.main_data_begin);
+-		}
+-
+-		public int Frequency
+-		{
+-			get
+-			{
+-				return ((Header)headerstream[0]).frequency;
+-			}
+-		}
+-
+-		public short Channels
+-		{
+-			get
+-			{
+-				return (((Header)headerstream[0]).channelmode == Header.MONO) ? (short)1 : (short)2;
+-			}
+-		}
+-
+-		public int ReadFrame(byte[] buffer)
+-		{
+-			buffer = new byte[((Header)headerstream[currentframe]).framelength];
+-			Frame thisframe = new Frame((Header)headerstream[currentframe], source);
+-			//int read = thisframe.Decode(buffer);
+-			currentframe++;
+-			return 0;
+-		}
+-
+-		private void SeekHeader()
+-		{
+-			byte[] buffer = new byte[4];
+-			do
+-			{
+-				// read 4 bytes (possible header)
+-				int read = source.Read(buffer, 0, 4);
+-
+-				// less than 4 bytes read -> EOF
+-				if(read < 4)
+-				{
+-					break;
+-				}
+-
+-				// check for typical header strucure
+-				if(SyncCheck(buffer))
+-				{
+-					// load the header bytes into the header class
+-					Header head = new Header(buffer, (source.Position-4));
+-
+-					// extract header information and do another check for invalid values
+-					if(head.Init())
+-					{
+-						// if frame contains CRC bytes, copy them to the header
+-						if(head.crc)
+-						{
+-							source.Read(head.crcbytes, 0, 2);
+-							source.Seek(-2, SeekOrigin.Current);
+-						}
+-
+-						// check if the frame length matches the header data
+-						byte[] syncbytes = new byte[4];
+-						long currentpos = source.Position;
+-						source.Seek(head.NextFrame(), SeekOrigin.Begin);
+-						source.Read(syncbytes, 0, 4);
+-						source.Seek(-1, SeekOrigin.Current);
+-						// do we have another header?
+-						if(SyncCheck(syncbytes))
+-						{
+-							// first header?
+-							if(headerstream.Count <= 0)
+-							{
+-								if(SyncCompare(buffer, syncbytes)) // check if MPEG Version / Layer matches those of the next header (to reduce chance to catch noise)
+-								{
+-									comparebuffer = (byte[])buffer.Clone();
+-
+-									// we have found a frame!
+-									headerstream.Add(head);
+-									Console.WriteLine(head.ToString());
+-									//break;
+-								}  
+-								else 
+-								{
+-									// resume search where we left
+-									source.Seek(currentpos, SeekOrigin.Begin);
+-								}
+-							
+-							}   
+-							else  // not the first header, so we don't do more checks to save some time 
+-							{
+-								// we have found a frame!
+-								headerstream.Add(head);
+-								//Console.WriteLine(head.ToString());
+-							}  
+-						}
+-
+-					}
+-				}  
+-
+-				// move 1 byte per cycle (instead of 4)
+-				source.Seek(-3, SeekOrigin.Current);
+-
+-			} while (true);
+-			
+-			Console.WriteLine("Frames: " + headerstream.Count.ToString());
+-
+-			if(headerstream.Count <= 0)
+-			{
+-				throw new Exception("Could not find MPEG headers");
+-			}
+-		}
+-
+-		private bool SyncCheck(byte[] buffer)
+-		{
+-			//      byte0 = 11111111      byte1 = 111xxxxx			    byte2 != 111111xx			  byte2 != 0000xxxx	  AND NOT	byte1 = xxx01xxx		   byte1 = xxxxx00x			 byte2 = xxxx11xx			 byte3 = xxxxxx10
+-			return (buffer[0] == 255 && ((buffer[1] & 224) == 224) && ((buffer[2] & 252) != 252) && ((buffer[2] & 240) != 0) && !(((buffer[1] & 24) == 8) || ((buffer[1] & 6) == 0) || ((buffer[2] & 12) == 12) || ((buffer[3] & 3) == 2)));
+-		}
+-
+-		private bool SyncCompare(byte[] buffera, byte[] bufferb)
+-		{
+-			//  equal mpeg version / layer   equal mode, copyright etc.					equal frequency
+-			if( buffera[1] == bufferb[1] && (buffera[3] & 207) == (bufferb[3] & 207) && (buffera[2] & 12) == (bufferb[2] & 12) )
+-			{
+-				return true;
+-			}
+-			return false;
+-		}
+-	}
+-}
+
+Deleted: trunk/dnpb.exe
+===================================================================
+(Binary files differ)
+
+Added: trunk/mp3.NET/App.ico
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/mp3.NET/App.ico
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Added: trunk/mp3.NET/AssemblyInfo.cs
+===================================================================
+--- trunk/mp3.NET/AssemblyInfo.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/mp3.NET/AssemblyInfo.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -0,0 +1,58 @@
++using System.Reflection;
++using System.Runtime.CompilerServices;
++
++//
++// General Information about an assembly is controlled through the following 
++// set of attributes. Change these attribute values to modify the information
++// associated with an assembly.
++//
++[assembly: AssemblyTitle("")]
++[assembly: AssemblyDescription("")]
++[assembly: AssemblyConfiguration("")]
++[assembly: AssemblyCompany("")]
++[assembly: AssemblyProduct("")]
++[assembly: AssemblyCopyright("")]
++[assembly: AssemblyTrademark("")]
++[assembly: AssemblyCulture("")]		
++
++//
++// Version information for an assembly consists of the following four values:
++//
++//      Major Version
++//      Minor Version 
++//      Build Number
++//      Revision
++//
++// You can specify all the values or you can default the Revision and Build Numbers 
++// by using the '*' as shown below:
++
++[assembly: AssemblyVersion("1.0.*")]
++
++//
++// In order to sign your assembly you must specify a key to use. Refer to the 
++// Microsoft .NET Framework documentation for more information on assembly signing.
++//
++// Use the attributes below to control which key is used for signing. 
++//
++// Notes: 
++//   (*) If no key is specified, the assembly is not signed.
++//   (*) KeyName refers to a key that has been installed in the Crypto Service
++//       Provider (CSP) on your machine. KeyFile refers to a file which contains
++//       a key.
++//   (*) If the KeyFile and the KeyName values are both specified, the 
++//       following processing occurs:
++//       (1) If the KeyName can be found in the CSP, that key is used.
++//       (2) If the KeyName does not exist and the KeyFile does exist, the key 
++//           in the KeyFile is installed into the CSP and used.
++//   (*) In order to create a KeyFile, you can use the sn.exe (Strong Name) utility.
++//       When specifying the KeyFile, the location of the KeyFile should be
++//       relative to the project output directory which is
++//       %Project Directory%\obj\<configuration>. For example, if your KeyFile is
++//       located in the project directory, you would specify the AssemblyKeyFile 
++//       attribute as [assembly: AssemblyKeyFile("..\\..\\mykey.snk")]
++//   (*) Delay Signing is an advanced option - see the Microsoft .NET Framework
++//       documentation for more information on this.
++//
++[assembly: AssemblyDelaySign(false)]
++[assembly: AssemblyKeyFile("")]
++[assembly: AssemblyKeyName("")]
+
+Added: trunk/mp3.NET/Frame.cs
+===================================================================
+--- trunk/mp3.NET/Frame.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/mp3.NET/Frame.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -0,0 +1,492 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.IO;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Class1.
++	/// </summary>
++	public class Frame
++	{
++
++		public class Granule
++		{
++			public Channel[] channels;
++		}
++
++		public class Channel
++		{
++			public int part_23_length;
++			public int big_value;
++			public int global_gain;
++			public int scalefac_compress;
++			public int window_switching_flag;
++			public int block_type;
++			public int mixed_block_flag;
++			public Region[] regions;
++			public Window[] windows;
++			public int region0_count;
++			public int region1_count;
++			public int preflag;
++			public int scalefac_scale;
++			public int countltable_select;
++
++			public int slen1;
++			public int slen2;
++			public int slen3;
++			public int slen4;
++			public int nrsfb1;
++			public int nrsfb2;
++			public int nrsfb3;
++			public int nrsfb4;
++			public short id;
++		}
++
++		public class Region
++		{
++			public int table_select;
++		}
++
++		public class Window
++		{
++			public int subblock_gain;
++		}
++
++		public Header header;
++		private byte[] sidedata;
++		private Stream maindata;
++		private Stream source;
++		public int main_data_begin;
++		private bool[][] scfsi = new bool[2][];
++		private Granule[] granules;
++		private int[][] part_23_length = new int[2][];
++		private int[][] big_values = new int[2][];
++		private int[][] global_gains = new int[2][];
++		private int[][] sf_compress = new int[2][];
++
++		public Frame(Header frameheader, Stream sourceStream)
++		{
++			scfsi[0] = new bool[4];
++			scfsi[1] = new bool[4];
++			part_23_length[0] = new int[2];
++			part_23_length[1] = new int[2];
++			big_values[0] = new int[2];
++			big_values[1] = new int[2];
++			global_gains[0] = new int[2];
++			global_gains[1] = new int[2];
++			sf_compress[0] = new int[2];
++			sf_compress[1] = new int[2];
++			
++			header = frameheader;
++			source = sourceStream;
++			
++			// let's get our frame's data
++			byte[] data = new byte[header.framelength];
++			long org_pos = source.Position;
++			int headlen = (header.crc) ? 6 : 4;
++			source.Seek(header.position+headlen, SeekOrigin.Begin);
++			source.Read(data, 0, header.framelength-headlen);
++			source.Seek(org_pos, SeekOrigin.Begin);
++
++			// split data
++
++			// select sidedata length
++			int sidedata_len = 0;
++			if(header.mpegversion == Header.MPEG_V1)
++			{
++				if(header.channelmode == Header.MONO)
++				{
++					sidedata_len = 17;
++				} 
++				else 
++				{
++					sidedata_len = 32;
++				}
++			} 
++			else 
++			{
++				if(header.channelmode == Header.MONO)
++				{
++					sidedata_len = 9;
++				} 
++				else 
++				{
++					sidedata_len = 17;
++				}
++			}
++
++			// init buffers
++			sidedata = new byte[sidedata_len];
++			byte[] mdata = new byte[data.Length - sidedata_len];
++
++			// write the data into the buffers
++			MemoryStream audiodata = new MemoryStream(data);
++			audiodata.Read(sidedata, 0, (int)sidedata.Length);
++			audiodata.Read(mdata, 0, (int)mdata.Length);
++
++			// create stream
++			maindata = new MemoryStream(mdata);
++
++			Parse_sidedata();
++		}
++
++		private void Parse_sidedata()
++		{
++			// retrieve main_data_begin
++			BitReader reader = new BitReader(sidedata);
++			if(header.mpegversion == Header.MPEG_V1)
++				main_data_begin = reader.ReadBits(9);
++			else
++				main_data_begin = reader.ReadBits(8);
++
++			// skip private bits
++			if(header.channelmode == Header.MONO)
++				reader.SeekF(6);
++			else
++				reader.SeekF(5);
++
++			// fill scalefactors information array
++			if(header.mpegversion == Header.MPEG_V1)
++			{
++				int i;
++				for(i=0; i<4; i++)
++				{
++					scfsi[0][i] = (reader.ReadBits(1) == 0) ? false : true;
++				}
++				if(header.channelmode != Header.MONO)
++				{
++					for(i=0; i<4; i++)
++					{
++						scfsi[1][i] = (reader.ReadBits(1) == 0) ? false : true;
++					}
++				}
++			}
++
++			granules = (header.mpegversion == Header.MPEG_V1) ? new Granule[2] : new Granule[1];
++			foreach(Granule g in granules)
++			{
++				short chid = 0;
++				g.channels = (header.channelmode == Header.MONO) ? new Channel[1] : new Channel[2];
++				foreach(Channel c in g.channels)
++				{
++					c.id = chid;
++					chid++;
++
++					c.part_23_length = reader.ReadBits(12);
++					c.big_value = reader.ReadBits(9);
++					c.global_gain = reader.ReadBits(8);
++
++					int sfc_len = (header.mpegversion == Header.MPEG_V1) ? 4 : 9;
++					c.scalefac_compress = reader.ReadBits(sfc_len);
++
++					c.window_switching_flag = reader.ReadBits(1);
++					if(c.window_switching_flag == 1)
++					{
++						c.block_type = reader.ReadBits(2);
++						c.mixed_block_flag = reader.ReadBits(1);
++
++						c.regions = new Region[2];
++						foreach(Region r in c.regions)
++						{
++							r.table_select = reader.ReadBits(5);
++						}
++
++						c.windows = new Window[3];
++						foreach(Window w in c.windows)
++						{
++							w.subblock_gain = reader.ReadBits(3);
++						}
++					}  
++					else 
++					{
++						c.regions = new Region[3];
++						foreach(Region r in c.regions)
++						{
++							r.table_select = reader.ReadBits(5);
++						}
++
++						c.region0_count = reader.ReadBits(4);
++						c.region1_count = reader.ReadBits(3);
++					}
++
++					if(header.mpegversion == Header.MPEG_V1)
++						c.preflag = reader.ReadBits(1);
++
++					c.scalefac_scale = reader.ReadBits(1);
++					c.countltable_select = reader.ReadBits(1);
++
++
++					if(header.mpegversion == Header.MPEG_V1)
++					{
++						switch(c.scalefac_compress)
++						{
++							case 0:
++							case 1:
++							case 2:
++							case 3:
++								c.slen1 = 0;
++								break;
++							case 4:
++							case 11:
++							case 12:
++							case 13:
++								c.slen1 = 3;
++								break;
++							case 5:
++							case 6:
++							case 7:
++								c.slen1 = 1;
++								break;
++							case 8:
++							case 9:
++							case 10:
++								c.slen1 = 2;
++								break;
++							case 14:
++							case 15:
++								c.slen1 = 4;
++								break;
++						}
++						switch(c.scalefac_compress)
++						{
++							case 0:
++							case 4:
++								c.slen2 = 0;
++								break;
++							case 1:
++							case 5:
++							case 8:
++							case 11:
++								c.slen2 = 1;
++								break;
++							case 2:
++							case 6:
++							case 9:
++							case 12:
++							case 14:
++								c.slen2 = 1;
++								break;
++							case 3:
++							case 7:
++							case 10:
++							case 13:
++							case 15:
++								c.slen2 = 3;
++								break;
++						}
++
++					}	 
++					else 
++					{	 // MPEG2
++						
++						if(!( (header.modeext == Header.BAND8TO31 | header.modeext == Header.BAND16TO31) && (c.id == 1) ))
++						{
++							if(c.scalefac_compress < 400)
++							{
++								c.slen1 = (c.scalefac_compress >> 4) / 5;
++								c.slen2 = (c.scalefac_compress >> 4) % 5;
++								c.slen3 = (c.scalefac_compress % 16) >> 2;
++								c.slen4 = (c.scalefac_compress % 4);
++								c.preflag = 0;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 6;
++									c.nrsfb2 = 5;
++									c.nrsfb3 = 5;
++									c.nrsfb4 = 5;
++								} 
++								else 
++								{
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
++									} 
++									else 
++									{
++										c.nrsfb1 = 6;
++										c.nrsfb2 = c.nrsfb3 = c.nrsfb4 = 9;
++									}
++								}
++							} 
++							else if(c.scalefac_compress < 500) 
++							{
++								c.slen1 = ((c.scalefac_compress-400) >> 2)/5;
++								c.slen2 = ((c.scalefac_compress-400) >> 2)%5;
++								c.slen3 = (c.scalefac_compress-400)%4;
++								c.slen4 = 0;
++								c.preflag = 0;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 6;
++									c.nrsfb2 = 5;
++									c.nrsfb3 = 7;
++									c.nrsfb4 = 3;
++								} 
++								else 
++								{
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = 9;
++										c.nrsfb2 = 9;
++										c.nrsfb3 = 12;
++										c.nrsfb4 = 6;
++									} 
++									else 
++									{
++										c.nrsfb1 = 6;
++										c.nrsfb2 = 9;
++										c.nrsfb3 = 12;
++										c.nrsfb4 = 6;
++									}
++								}
++							} 
++							else if(c.scalefac_compress < 512) 
++							{
++								c.slen1 = (c.scalefac_compress-500)/3;
++								c.slen2 = (c.scalefac_compress-500)%3;
++								c.slen3 = 0;
++								c.slen4 = 0;
++								c.preflag = 1;
++								if(c.block_type != 10)
++								{
++									c.nrsfb1 = 11;
++									c.nrsfb2 = 10;
++									c.nrsfb3 = 0;
++									c.nrsfb4 = 0;
++								} 
++								else 
++								{
++									c.nrsfb2 = 18;
++									c.nrsfb3 = 0;
++									c.nrsfb4 = 0;
++									if(c.mixed_block_flag == 0)
++									{
++										c.nrsfb1 = 18;
++									} 
++									else 
++									{
++										c.nrsfb1 = 15;
++									}
++								}
++							}
++						}  
++						else 
++						{
++
++						}
++					}
++				}
++			}			
++		}
++
++		//TODO: CRC check
++	}
++
++	public class BitReader
++	{
++		private byte[] bytedata;
++		private int pos;
++
++		public BitReader (byte[] data)
++		{
++			this.bytedata = data;
++			pos = 0;
++		}
++
++		public int Position
++		{
++			get
++			{
++				return pos;
++			}
++			set
++			{
++				pos = value;
++			}
++		}
++
++		public void SeekF( int nr )
++		{
++			pos += nr;
++		}
++
++		public void SeekB( int nr )
++		{
++			pos -= nr;
++			if(pos < 0)
++			{
++				pos = 0;
++			}
++		}
++
++		public int ReadBits(int nr)
++		{
++			int bytenr = Convert.ToInt32(Math.Floor(pos / 8));
++			int i;
++			int bytepos = pos - (bytenr * 8);
++			int returnval = 0;
++			for(i = 0; i < nr; i++)
++			{
++				int bitselector = 0;
++				switch(bytepos)
++				{
++					case 0:
++						bitselector = 128;
++						break;
++					case 1:
++						bitselector = 64;
++						break;
++					case 2:
++						bitselector = 32;
++						break;
++					case 3:
++						bitselector = 16;
++						break;
++					case 4:
++						bitselector = 8;
++						break;
++					case 5:
++						bitselector = 4;
++						break;
++					case 6:
++						bitselector = 2;
++						break;
++					case 7:
++						bitselector = 1;
++						break;
++					case 8:
++						bytenr++;
++						bytepos = 0;
++						bitselector = 128;
++						break;
++				}
++				if(bytenr >= bytedata.Length)
++				{
++					break;
++				}
++				returnval += ((bytedata[bytenr] & bitselector) == bitselector) ? Convert.ToInt32(Math.Pow(2, nr - (i+1))) : 0;
++				bytepos++;
++			}
++			return returnval;
++		}
++	}
++}
+
+Added: trunk/mp3.NET/Header.cs
+===================================================================
+--- trunk/mp3.NET/Header.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/mp3.NET/Header.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -0,0 +1,328 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.Collections;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Header.
++	/// </summary>
++	public class Header
++	{
++		public byte[] head;
++
++		public long position;
++
++		public short mpegversion;
++		public const short MPEG_V25 = 3;
++		public const short MPEG_V2 = 2;
++		public const short MPEG_V1 = 1;
++
++		public short mpeglayer;
++		public const short LAYER3 = 3;
++		public const short LAYER2 = 2;
++		public const short LAYER1 = 1;
++
++		public bool crc;
++		public byte[] crcbytes = new byte[2];
++
++		private int[][][] b_rates;
++		public int bitrate;
++
++		public bool padding;
++
++		public int frequency;
++
++		public short channelmode;
++		public const short MONO = 1;
++		public const short DUAL_CHANNEL = 2;
++		public const short JOINT_STEREO = 3;
++		public const short STEREO = 4;
++
++		public short modeext;
++		public const short BAND4TO31 = 1;
++		public const short BAND8TO31 = 2;
++		public const short BAND12TO31 = 3;
++		public const short BAND16TO31 = 4;
++		public bool stereoInt;
++		public bool stereoMS;
++
++		public int framelength;
++
++		public Header (byte[] head, long position)
++		{
++			b_rates = new int[3][][];
++			b_rates[0] = new int[3][];
++			b_rates[1] = new int[3][];
++			b_rates[0][0] = new int[]{0,32,64,96,128,160,192,224,256,288,320,352,384,416,448};
++			b_rates[0][1] = new int[]{0,32,48,56,64,80,96,112,128,160,192,224,256,320,384};
++			b_rates[0][2] = new int[]{0,32,40,48,56,64,80,96,112,128,160,192,224,256,320};
++			b_rates[1][0] = new int[]{0,32,48,56,64,80,96,112,128,144,160,176,192,224,256};
++			b_rates[1][1] = new int[]{0,8,16,24,32,40,48,56,64,80,96,112,128,144,160};
++			b_rates[1][2] = b_rates[1][1];
++			b_rates[2] = b_rates[1];
++
++			this.head = head;
++			this.position = position;
++		}
++
++		public long NextFrame()
++		{
++			long newpos = position + framelength;
++			return newpos;
++		}
++
++		public override String ToString()
++		{
++			String output = "";
++			switch(mpegversion)
++			{
++				case MPEG_V1:
++					output += "MPEG 1 ";
++					break;
++				case MPEG_V2:
++					output += "MPEG 2 ";
++					break;
++				case MPEG_V25:
++					output += "MPEG 2.5 ";
++					break;
++			}
++			switch(mpeglayer)
++			{
++				case LAYER1:
++					output += "Layer I ";
++					break;
++				case LAYER2:
++					output += "Layer II ";
++					break;
++				case LAYER3:
++					output += "Layer III ";
++					break;
++			}
++			if(crc)
++				output += "CRC protected ";
++			if(bitrate > 0)
++				output += bitrate.ToString() + "kbps ";
++			if(frequency > 0)
++				output += frequency.ToString() + "Hz ";
++			switch(channelmode)
++			{
++				case MONO:
++					output += "Mono ";
++					break;
++				case DUAL_CHANNEL:
++					output += "Dual Channel ";
++					break;
++				case JOINT_STEREO:
++					output += "Joint Stereo ";
++					break;
++				case STEREO:
++					output += "Stereo ";
++					break;
++			}
++			if(padding)
++				output += "Padded ";
++
++			return output;
++		}
++		
++		public bool Init()
++		{
++			// extract version
++			switch(head[1] & 24)
++			{
++				case 0:
++					mpegversion = MPEG_V25;
++					break;
++				case 16:
++					mpegversion = MPEG_V2;
++					break;
++				case 24:
++					mpegversion = MPEG_V1;
++					break;
++				default:
++					return false;
++			}
++
++			// extract layer
++			switch(head[1] & 6)
++			{
++				case 2:
++					mpeglayer = LAYER3;
++					break;
++				case 4:
++					mpeglayer = LAYER2;
++					break;
++				case 6:
++					mpeglayer = LAYER1;
++					break;
++				default:
++					return false;
++			}
++
++			// crc protection?
++			switch(head[1] & 1)
++			{
++				case 1:
++					crc = false;
++					break;
++				case 0:
++					crc = true;
++					break;
++				default:
++					return false;
++			}
++
++			// extract bitrate
++			int bitrate_index = (head[2] >> 4) & 15;
++			bitrate = b_rates[(mpegversion-1)][(mpeglayer-1)][bitrate_index];
++			if(bitrate <= 0)
++				return false;
++
++			// extract sampling frequency
++			switch(head[2] & 12)
++			{
++				case 0:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 44100;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 22050;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 11025;
++					}
++					break;
++				case 4:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 48000;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 24000;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 12000;
++					}
++					break;
++				case 8:
++					if(mpegversion == MPEG_V1)
++					{
++						frequency = 32000;
++					} 
++					else if (mpegversion == MPEG_V2) 
++					{
++						frequency = 16000;
++					} 
++					else if (mpegversion == MPEG_V25)
++					{
++						frequency = 8000;
++					}
++					break;
++				default:
++					return false;
++			}
++
++			// padded frame or not?
++			switch(head[2] & 2)
++			{
++				case 2:
++					padding = true;
++					break;
++				case 0:
++					padding = false;
++					break;
++				default:
++					return false;
++			}
++
++			// extract channel mode
++			switch(head[3] & 192)
++			{
++				case 0:				  
++					channelmode = STEREO;
++					break;
++				case 64:
++					channelmode = JOINT_STEREO;
++					break;
++				case 128:
++					channelmode = DUAL_CHANNEL;
++					break;
++				case 192:
++					channelmode = MONO;
++					break;
++				default:
++					return false;
++			}
++
++			// mode extension for joint stereo
++			if( channelmode == JOINT_STEREO )
++			{
++				switch(head[3] & 48)
++				{
++					case 0:
++						modeext = BAND4TO31;
++						stereoInt = false;
++						stereoMS = false;
++						break;
++					case 16:
++						modeext = BAND8TO31;
++						stereoInt = true;
++						stereoMS = false;
++						break;
++					case 32:
++						modeext = BAND12TO31;
++						stereoInt = false;
++						stereoMS = true;
++						break;
++					case 48:
++						modeext = BAND16TO31;
++						stereoInt = true;
++						stereoMS = true;
++						break;
++					default:
++						return false;
++				}
++			}
++
++			// calc framelength
++			int padding_int = (padding) ? 1 : 0;
++			if(mpegversion == MPEG_V1)
++			{
++				
++				framelength = ((1152*bitrate*1000)/frequency)/8 + padding_int;
++			} 
++			else 
++			{
++				framelength = ((576*bitrate*1000)/frequency)/8 + padding_int;
++			}
++
++			//throw new Exception();
++
++			return true;
++		}
++	}
++}
+\ No newline at end of file
+
+Added: trunk/mp3.NET/MP3Stream.cs
+===================================================================
+--- trunk/mp3.NET/MP3Stream.cs	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/mp3.NET/MP3Stream.cs	2005-05-26 11:55:19 UTC (rev 11)
+@@ -0,0 +1,186 @@
++//	mp3.NET MPEG Decoder
++//	(c) 2005, mp3.NET Developers
++//
++//	This library is free software; you can redistribute 
++//	it and/or modify it under the terms of the 
++//	GNU Lesser General Public License as published by the 
++//	Free Software Foundation; either version 2.1 of the License, 
++//	or (at your option) any later version.
++//
++//	This library is distributed in the hope that it will be useful, 
++//	but WITHOUT ANY WARRANTY; without even the implied warranty of 
++//	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
++//	GNU Lesser General Public License for more details.
++//
++//	You should have received a copy of the GNU Lesser General 
++//	Public License along with this library; if not, write to the 
++//	Free Software Foundation, Inc., 59 Temple Place, Suite 330, 
++//	Boston, MA 02111-1307 USA
++
++using System;
++using System.IO;
++using System.Collections;
++
++namespace MP3Net
++{
++	/// <summary>
++	/// Summary description for Class1.
++	/// </summary>
++	class MP3Stream
++	{
++		/// <summary>
++		/// The main entry point for the application.
++		/// </summary>
++		[STAThread]
++		static void Main(string[] args)
++		{
++			//HACK: test file
++			MP3Stream mp3 = new MP3Stream(new FileStream("growl.mp3", FileMode.Open));
++		}
++
++		private Stream source;
++		ArrayList headerstream = new ArrayList();
++		byte[] comparebuffer = new byte[4];
++		int currentframe = 0;
++
++		public MP3Stream (Stream source)
++		{
++			source.Seek(0, SeekOrigin.Begin);
++			this.source = source;
++			SeekHeader();
++			Frame firstframe = new Frame((Header)headerstream[0], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[1], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[2], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[3], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++			firstframe = new Frame((Header)headerstream[4], source);
++			Console.WriteLine("MDB " + firstframe.main_data_begin);
++		}
++
++		public int Frequency
++		{
++			get
++			{
++				return ((Header)headerstream[0]).frequency;
++			}
++		}
++
++		public short Channels
++		{
++			get
++			{
++				return (((Header)headerstream[0]).channelmode == Header.MONO) ? (short)1 : (short)2;
++			}
++		}
++
++		public int ReadFrame(byte[] buffer)
++		{
++			buffer = new byte[((Header)headerstream[currentframe]).framelength];
++			Frame thisframe = new Frame((Header)headerstream[currentframe], source);
++			//int read = thisframe.Decode(buffer);
++			currentframe++;
++			return 0;
++		}
++
++		private void SeekHeader()
++		{
++			byte[] buffer = new byte[4];
++			do
++			{
++				// read 4 bytes (possible header)
++				int read = source.Read(buffer, 0, 4);
++
++				// less than 4 bytes read -> EOF
++				if(read < 4)
++				{
++					break;
++				}
++
++				// check for typical header strucure
++				if(SyncCheck(buffer))
++				{
++					// load the header bytes into the header class
++					Header head = new Header(buffer, (source.Position-4));
++
++					// extract header information and do another check for invalid values
++					if(head.Init())
++					{
++						// if frame contains CRC bytes, copy them to the header
++						if(head.crc)
++						{
++							source.Read(head.crcbytes, 0, 2);
++							source.Seek(-2, SeekOrigin.Current);
++						}
++
++						// check if the frame length matches the header data
++						byte[] syncbytes = new byte[4];
++						long currentpos = source.Position;
++						source.Seek(head.NextFrame(), SeekOrigin.Begin);
++						source.Read(syncbytes, 0, 4);
++						source.Seek(-1, SeekOrigin.Current);
++						// do we have another header?
++						if(SyncCheck(syncbytes))
++						{
++							// first header?
++							if(headerstream.Count <= 0)
++							{
++								if(SyncCompare(buffer, syncbytes)) // check if MPEG Version / Layer matches those of the next header (to reduce chance to catch noise)
++								{
++									comparebuffer = (byte[])buffer.Clone();
++
++									// we have found a frame!
++									headerstream.Add(head);
++									Console.WriteLine(head.ToString());
++									//break;
++								}  
++								else 
++								{
++									// resume search where we left
++									source.Seek(currentpos, SeekOrigin.Begin);
++								}
++							
++							}   
++							else  // not the first header, so we don't do more checks to save some time 
++							{
++								// we have found a frame!
++								headerstream.Add(head);
++								//Console.WriteLine(head.ToString());
++							}  
++						}
++
++					}
++				}  
++
++				// move 1 byte per cycle (instead of 4)
++				source.Seek(-3, SeekOrigin.Current);
++
++			} while (true);
++			
++			Console.WriteLine("Frames: " + headerstream.Count.ToString());
++
++			if(headerstream.Count <= 0)
++			{
++				throw new Exception("Could not find MPEG headers");
++			}
++		}
++
++		private bool SyncCheck(byte[] buffer)
++		{
++			//      byte0 = 11111111      byte1 = 111xxxxx			    byte2 != 111111xx			  byte2 != 0000xxxx	  AND NOT	byte1 = xxx01xxx		   byte1 = xxxxx00x			 byte2 = xxxx11xx			 byte3 = xxxxxx10
++			return (buffer[0] == 255 && ((buffer[1] & 224) == 224) && ((buffer[2] & 252) != 252) && ((buffer[2] & 240) != 0) && !(((buffer[1] & 24) == 8) || ((buffer[1] & 6) == 0) || ((buffer[2] & 12) == 12) || ((buffer[3] & 3) == 2)));
++		}
++
++		private bool SyncCompare(byte[] buffera, byte[] bufferb)
++		{
++			//  equal mpeg version / layer   equal mode, copyright etc.					equal frequency
++			if( buffera[1] == bufferb[1] && (buffera[3] & 207) == (bufferb[3] & 207) && (buffera[2] & 12) == (bufferb[2] & 12) )
++			{
++				return true;
++			}
++			return false;
++		}
++	}
++}
+
+Added: trunk/mp3.NET/dnpb.exe
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/mp3.NET/dnpb.exe
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Added: trunk/mp3.NET/prebuild.xml
+===================================================================
+--- trunk/mp3.NET/prebuild.xml	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/mp3.NET/prebuild.xml	2005-05-26 11:55:19 UTC (rev 11)
+@@ -0,0 +1,46 @@
++<?xml version="1.0" encoding="utf-8" ?> 
++<DNPreBuild xmlns="http://dnpb.sourceforge.net/schemas/dnpb-1.4.xsd">
++	<Solution name="mp3.NET">
++		<Configuration name="Debug">
++			<Options>
++			    <?if OS = "Win32" ?>
++				<CompilerDefines>DEBUG;TRACE;WIN32</CompilerDefines>
++				<?else ?>
++				<CompilerDefines>DEBUG;TRACE;POSIX</CompilerDefines>
++				<?endif ?>
++				<OptimizeCode>false</OptimizeCode>
++				<OutputPath>./bin/Debug</OutputPath>
++				<DebugInformation>true</DebugInformation>
++			</Options>
++		</Configuration>
++		
++		<Configuration name="Release">
++			<Options>
++			    <?if OS = "Win32" ?>
++				<CompilerDefines>TRACE;WIN32</CompilerDefines>
++				<?else ?>
++				<CompilerDefines>TRACE;POSIX</CompilerDefines>
++				<?endif ?>
++				<OutputPath>./bin/Release</OutputPath>
++				<OptimizeCode>true</OptimizeCode>
++				<DebugInformation>false</DebugInformation>
++			</Options>
++		</Configuration>
++		
++		<Project 
++			name="mp3.NET" 
++			type="Exe" 
++			path="./"
++			language="C#" 
++			runtime="Microsoft" 
++			icon="App.ico">
++
++			<Reference name="System" />
++			<Reference name="System.Data" />
++			
++			<Files>
++				<Match pattern="*.cs" path="./" recurse="false"/>
++			</Files>
++		</Project>
++	</Solution>
++</DNPreBuild>
+\ No newline at end of file
+
+Deleted: trunk/prebuild.xml
+===================================================================
+--- trunk/prebuild.xml	2005-05-26 11:49:25 UTC (rev 10)
++++ trunk/prebuild.xml	2005-05-26 11:55:19 UTC (rev 11)
+@@ -1,46 +0,0 @@
+-<?xml version="1.0" encoding="utf-8" ?> 
+-<DNPreBuild xmlns="http://dnpb.sourceforge.net/schemas/dnpb-1.4.xsd">
+-	<Solution name="mp3.NET">
+-		<Configuration name="Debug">
+-			<Options>
+-			    <?if OS = "Win32" ?>
+-				<CompilerDefines>DEBUG;TRACE;WIN32</CompilerDefines>
+-				<?else ?>
+-				<CompilerDefines>DEBUG;TRACE;POSIX</CompilerDefines>
+-				<?endif ?>
+-				<OptimizeCode>false</OptimizeCode>
+-				<OutputPath>./bin/Debug</OutputPath>
+-				<DebugInformation>true</DebugInformation>
+-			</Options>
+-		</Configuration>
+-		
+-		<Configuration name="Release">
+-			<Options>
+-			    <?if OS = "Win32" ?>
+-				<CompilerDefines>TRACE;WIN32</CompilerDefines>
+-				<?else ?>
+-				<CompilerDefines>TRACE;POSIX</CompilerDefines>
+-				<?endif ?>
+-				<OutputPath>./bin/Release</OutputPath>
+-				<OptimizeCode>true</OptimizeCode>
+-				<DebugInformation>false</DebugInformation>
+-			</Options>
+-		</Configuration>
+-		
+-		<Project 
+-			name="mp3.NET" 
+-			type="Exe" 
+-			path="./"
+-			language="C#" 
+-			runtime="Microsoft" 
+-			icon="App.ico">
+-
+-			<Reference name="System" />
+-			<Reference name="System.Data" />
+-			
+-			<Files>
+-				<Match pattern="*.cs" path="./" recurse="false"/>
+-			</Files>
+-		</Project>
+-	</Solution>
+-</DNPreBuild>
+\ No newline at end of file
+
+
+

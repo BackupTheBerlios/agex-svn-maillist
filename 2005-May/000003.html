@@ -1,0 +1,437 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Agex-svn] r8 - in trunk/AGES: . AGESDemo Decoders/mp3 DirectSound OpenAL
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/agex-svn/2005-May/index.html" >
+   <LINK REL="made" HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r8%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20Decoders/mp3%20DirectSound%20OpenAL&In-Reply-To=%3C200505212138.j4LLcWa1016212%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000002.html">
+   <LINK REL="Next"  HREF="000004.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Agex-svn] r8 - in trunk/AGES: . AGESDemo Decoders/mp3 DirectSound OpenAL</H1>
+    <B>Ilmar Kruis at BerliOS</B> 
+    <A HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r8%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20Decoders/mp3%20DirectSound%20OpenAL&In-Reply-To=%3C200505212138.j4LLcWa1016212%40sheep.berlios.de%3E"
+       TITLE="[Agex-svn] r8 - in trunk/AGES: . AGESDemo Decoders/mp3 DirectSound OpenAL">seaeagle1 at sheep.berlios.de
+       </A><BR>
+    <I>Sat May 21 23:38:32 CEST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000002.html">[Agex-svn] r7 - trunk/AGES/OpenAL
+</A></li>
+        <LI>Next message: <A HREF="000004.html">[Agex-svn] r9 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3">[ date ]</a>
+              <a href="thread.html#3">[ thread ]</a>
+              <a href="subject.html#3">[ subject ]</a>
+              <a href="author.html#3">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: seaeagle1
+Date: 2005-05-21 23:38:32 +0200 (Sat, 21 May 2005)
+New Revision: 8
+
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/Decoders/mp3/DecoderMP3.cs
+   trunk/AGES/Decoders/mp3/Plugin.cs
+   trunk/AGES/DirectSound/Sound.cs
+   trunk/AGES/FileManager.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/Sound.cs
+   trunk/AGES/SoundManager.cs
+   trunk/AGES/WaveFile.cs
+Log:
+Update some documentation and made ConeDirection relative to SceneNode
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -85,7 +85,7 @@
+             // create a scene node to attach the camera to
+             SceneNode cameraNode = scene.RootSceneNode.CreateChildSceneNode(&quot;CameraNode&quot;);
+             cameraNode.AttachObject(camera);
+- 
++            
+             /////////////////////////- AGE Sound Library Settings -//////////////////////////
+             // initialise the SoundManager by setting the RenderWindow
+             SoundManager.Instance.SetRenderWindow(this.window, this.camera);
+@@ -103,12 +103,13 @@
+             // attach the sound to the head
+            	headNode.AttachObject(growl);
+             // set the sound's properties
+-            //growl.ConeAngles = new int[]{90, 120};
+-           // growl.ConeDirection = Vector3.UnitZ;
++            growl.ConeAngles = new int[]{120, 120};
++            growl.ConeDirection = Vector3.UnitZ;
+       		//growl.MaxDistance = 5000;
+-           // growl.OutsideVolume = -10000;
++            growl.OutsideVolume = -10000;
+             // play the 3D sound in a loop
+             growl.Play(true);
++            
+             ////////////////////////////////////////////////////////////////////////////////
+             
+             // create new animation
+
+Modified: trunk/AGES/Decoders/mp3/DecoderMP3.cs
+===================================================================
+--- trunk/AGES/Decoders/mp3/DecoderMP3.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Decoders/mp3/DecoderMP3.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -40,6 +40,7 @@
+ {
+ 	/// &lt;summary&gt;
+ 	/// The Mp3 decoder
++	/// (This assembly is GPL licensed)
+ 	/// &lt;/summary&gt;
+ 	public class DecoderMP3 : IDecoder
+ 	{
+
+Modified: trunk/AGES/Decoders/mp3/Plugin.cs
+===================================================================
+--- trunk/AGES/Decoders/mp3/Plugin.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Decoders/mp3/Plugin.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -31,10 +31,13 @@
+ namespace Axiom.SoundSystems.Decoders
+ {
+ 	/// &lt;summary&gt;
+-	/// Summary description for MP3Plugin.
++	/// The Axiom plugin for the MP3 decoder
+ 	/// &lt;/summary&gt;
+ 	public class MP3Plugin : IPlugin 
+ 	{ 
++		/// &lt;summary&gt;
++		/// Register the MP3 decoder and the .mp3 extension with the &lt;see cref=&quot;Axiom.SoundSystems.FileManager&quot;&gt;FileManager&lt;/see&gt;
++		/// &lt;/summary&gt;
+ 		public void Start() 
+ 		{ 
+ 			if(FileManager.Instance == null)
+@@ -45,6 +48,9 @@
+ 			FileManager.Instance.DecoderTypes.Add(typeof(Axiom.SoundSystems.Decoders.DecoderMP3));
+ 		} 
+ 
++		/// &lt;summary&gt;
++		/// Remove registration of the MP3 decoder and .mp3 extension from the &lt;see cref=&quot;Axiom.SoundSystems.FileManager&quot;&gt;FileManager&lt;/see&gt;
++		/// &lt;/summary&gt;
+ 		public void Stop() 
+ 		{ 
+ 			FileManager.Instance.Extensions.Remove(&quot;mp3&quot;);
+
+Modified: trunk/AGES/DirectSound/Sound.cs
+===================================================================
+--- trunk/AGES/DirectSound/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/DirectSound/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -150,17 +150,10 @@
+ 			}
+ 		}
+ 		
+-		public override Axiom.MathLib.Vector3 ConeDirection
++		protected override void SetConeDirection(Axiom.MathLib.Vector3 direction)
+ 		{
+-			get{
+-				//TODO: Relative to SceneNode
+-				return new Axiom.MathLib.Vector3(threeDsound.ConeOrientation.X, threeDsound.ConeOrientation.Y, threeDsound.ConeOrientation.Z);
+-			}
+-			set{
+-				//TODO: Relative to SceneNode
+-				Axiom.MathLib.Vector3 vector = value;
+-				threeDsound.ConeOrientation = new Vector3(vector.x, vector.y, vector.z);
+-			}
++			Axiom.MathLib.Vector3 vector = direction;
++			threeDsound.ConeOrientation = new Vector3(vector.x, vector.y, vector.z);
+ 		}
+ 		
+ 		public override int OutsideVolume
+
+Modified: trunk/AGES/FileManager.cs
+===================================================================
+--- trunk/AGES/FileManager.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/FileManager.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -28,7 +28,7 @@
+ namespace Axiom.SoundSystems
+ {
+ 	/// &lt;summary&gt;
+-	/// The FileManager handles the loading of sound files
++	/// Class FileManager, takes care of the loading and decoding of audio files
+ 	/// &lt;/summary&gt;
+ 	public class FileManager
+ 	{
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -178,11 +178,11 @@
+ 		public override Vector3 WorldPosition
+ 		{
+ 			get{
++				//TODO: WorldPosition
+ 				return worldposition;
+ 			}
+ 		}
+ 		
+-		//TODO: relative to SceneNode
+ 		public override int[] ConeAngles
+ 		{
+ 			get{
+@@ -197,18 +197,11 @@
+ 			}
+ 		}
+ 		
+-		//TODO: relative to SceneNode
+-		public override Vector3 ConeDirection
++		protected override void SetConeDirection(Axiom.MathLib.Vector3 direction)
+ 		{
+-			get{
+-				float[] vector = new float[]{0,0,0};
+-				Al.alGetSourcefv(source, Al.AL_DIRECTION, vector);
+-				return new Vector3(vector[0], vector[1], vector[2]);
+-			}
+-			set{
+-				float[] vector = new float[]{value.x, value.y, value.z};
+-				Al.alSourcefv(source, Al.AL_DIRECTION, vector);
+-			}
++			Axiom.MathLib.Vector3 vector = direction;
++			float[] vector2 = new float[]{vector.x, vector.y, vector.z};
++			Al.alSourcefv(source, Al.AL_DIRECTION, vector2);			
+ 		}
+ 		
+ 		public override int OutsideVolume
+
+Modified: trunk/AGES/Sound.cs
+===================================================================
+--- trunk/AGES/Sound.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/Sound.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -51,6 +51,21 @@
+ 		protected Axiom.MathLib.Vector3 lastposition = Axiom.MathLib.Vector3.Zero;
+ 		
+ 		/// &lt;summary&gt;
++		/// SceneNode's last orientation, to check if it's changed
++		/// &lt;/summary&gt;
++		protected Quaternion lastorientation = Quaternion.Zero;
++		
++		/// &lt;summary&gt;
++		/// Last cone direction, to check if it's changed
++		/// &lt;/summary&gt;
++		protected Vector3 lastdirection = Vector3.Zero;
++		
++		/// &lt;summary&gt;
++		/// The direction of the sound cone
++		/// &lt;/summary&gt;
++		protected Vector3 conedirection = Vector3.Zero;
++		
++		/// &lt;summary&gt;
+ 		/// Type is a simple warning or background sound, without fancy 3D positioning etc.
+ 		/// &lt;/summary&gt;
+ 		public const short SIMPLE_SOUND = 1;
+@@ -61,7 +76,7 @@
+ 		public const short THREED_SOUND = 2;
+ 		
+ 		/// &lt;summary&gt;
+-		/// Constructor, do not use this but initialise through SoundManager.LoadFile()
++		/// Constructor, do not use this but initialise through &lt;see cref=&quot;Axiom.SoundSystems.SoundManager.LoadSound&quot;&gt;SoundManager.LoadSound()&lt;/see&gt;
+ 		/// &lt;/summary&gt;
+ 		/// &lt;param name=&quot;filename&quot;&gt;The filename of the wave file (searched in the common resource data, ie. in the paths set in EngineConfig.xml)&lt;/param&gt;
+ 		/// &lt;param name=&quot;ID&quot;&gt;This sound's ID given by the SoundManager&lt;/param&gt;
+@@ -79,7 +94,7 @@
+ 		public abstract void Play(bool loop);
+ 		
+ 		/// &lt;summary&gt;
+-		/// Stops playing the file, calling &lt;see cref=&quot;Play(bool loop)&quot;&gt;Play()&lt;/see&gt; again will start playing from the position where Pause() was called
++		/// Stops playing the file, calling &lt;see cref=&quot;Axiom.SoundSystems.Sound.Play&quot;&gt;Play()&lt;/see&gt; again will start playing from the position where Pause() was called
+ 		/// &lt;/summary&gt;
+ 		public abstract void Pause();
+ 		
+@@ -111,6 +126,7 @@
+ 		/// &lt;/summary&gt;
+ 		public virtual void UpdatePosition()
+ 		{
++			// if the position is changed
+ 			if((parentNode != null) &amp;&amp; ( (lastnodeposition.x != parentNode.WorldPosition.x || lastnodeposition.y != parentNode.WorldPosition.y || lastnodeposition.z != parentNode.WorldPosition.z) || (this.Position != lastposition)))
+ 			{
+ 				SetPosition(parentNode.WorldPosition + this.Position);
+@@ -118,16 +134,31 @@
+ 				lastposition = this.Position;
+ 			}
+ 			
++			// if the orientation is changed
++			if((parentNode != null) &amp;&amp; ( (parentNode.WorldOrientation.w != lastorientation.w || parentNode.WorldOrientation.x != lastorientation.x || parentNode.WorldOrientation.y != lastorientation.y || parentNode.WorldOrientation.z != lastorientation.z) || (conedirection != lastdirection)))
++			{
++				SetConeDirection(Quaternion.Multiply(parentNode.WorldOrientation, conedirection));
++				lastorientation = parentNode.WorldOrientation;
++				lastdirection = conedirection;
++			}
+ 		}
+ 		
+ 		/// &lt;summary&gt;
+ 		/// Set a new WorldPosition of the sound
+ 		/// &lt;/summary&gt;
++		/// &lt;param name=&quot;newposition&quot;&gt;The position to set&lt;/param&gt;
+ 		protected abstract void SetPosition(Axiom.MathLib.Vector3 newposition);
+ 		
+ 		/// &lt;summary&gt;
+-		/// Set the current camera
++		/// Set a new direction of the sound cone in World coordinates
+ 		/// &lt;/summary&gt;
++		/// &lt;param name=&quot;direction&quot;&gt;The direction to set&lt;/param&gt;
++		protected abstract void SetConeDirection(Axiom.MathLib.Vector3 direction);
++		
++		/// &lt;summary&gt;
++		/// Set the current camera - Unused
++		/// &lt;/summary&gt;
++		/// &lt;param name=&quot;camera&quot;&gt;The current camera&lt;/param&gt;
+ 		public override void NotifyCurrentCamera(Camera camera)
+ 		{
+ 		}
+@@ -135,6 +166,7 @@
+ 		/// &lt;summary&gt;
+ 		/// Null-implementation of SceneObject Member
+ 		/// &lt;/summary&gt;
++		/// &lt;param name=&quot;queue&quot;&gt;&lt;/param&gt;
+ 		public override void UpdateRenderQueue(Axiom.Graphics.RenderQueue queue)
+ 		{
+ 			
+@@ -191,12 +223,16 @@
+ 		}
+ 		
+ 		/// &lt;summary&gt;
+-		/// The direction of the sound cone ((not yet) relative to the ScenNode orientation)
++		/// The direction of the sound cone (relative to the SceneNode orientation)
+ 		/// &lt;/summary&gt;
+-		public abstract Axiom.MathLib.Vector3 ConeDirection
++		public virtual Axiom.MathLib.Vector3 ConeDirection
+ 		{
+-			get;
+-			set;
++			get{
++				return conedirection;
++			}
++			set{
++				conedirection = value;
++			}
+ 		}
+ 		
+ 		/// &lt;summary&gt;
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/SoundManager.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -34,7 +34,7 @@
+ {
+ 
+ 	/// &lt;summary&gt;
+-	/// Abstract class SoundManager : IDisposable, Keeps track of loaded sounds and updates 
++	/// Abstract Class SoundManager : IDisposable, Keeps track of loaded sounds and updates 
+ 	/// sound and listener positions according to scene changes
+ 	/// &lt;/summary&gt;
+ 	public abstract class SoundManager : IDisposable
+@@ -139,7 +139,7 @@
+ 		/// &lt;summary&gt;
+ 		/// Do some final initialisations
+ 		/// &lt;/summary&gt;
+-		/// &lt;param name=&quot;window&quot;&gt;The target RenderWindow&lt;/param&gt;
++		/// &lt;param name=&quot;renderwindow&quot;&gt;The target RenderWindow&lt;/param&gt;
+ 		/// &lt;param name=&quot;camera&quot;&gt;The 'listening' camera&lt;/param&gt;
+ 		public virtual void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+
+Modified: trunk/AGES/WaveFile.cs
+===================================================================
+--- trunk/AGES/WaveFile.cs	2005-05-20 14:50:21 UTC (rev 7)
++++ trunk/AGES/WaveFile.cs	2005-05-21 21:38:32 UTC (rev 8)
+@@ -24,7 +24,9 @@
+ 
+ namespace Axiom.SoundSystems
+ {
+-
++	/// &lt;summary&gt;
++	/// Structure WaveFile defines a wavefile, pcm data and format settings
++	/// &lt;/summary&gt;
+ 	public struct WaveFile
+ 	{
+ 		private int freq;
+@@ -33,6 +35,9 @@
+ 		private Stream data;
+ 		private Stream file;
+ 		
++		/// &lt;summary&gt;
++		/// The sampling frequency of the data (in Hz = samples / second)
++		/// &lt;/summary&gt;
+ 		public int Frequency
+ 		{
+ 			get{
+@@ -43,6 +48,9 @@
+ 			}
+ 		}
+ 		
++		/// &lt;summary&gt;
++		/// Sets the data 8 or 16 bits
++		/// &lt;/summary&gt;
+ 		public short Bits
+ 		{
+ 			get{
+@@ -53,6 +61,9 @@
+ 			}
+ 		}
+ 		
++		/// &lt;summary&gt;
++		/// Set if it is a stereo or mono file
++		/// &lt;/summary&gt;
+ 		public short Channels
+ 		{
+ 			get{
+@@ -63,6 +74,9 @@
+ 			}
+ 		}
+ 		
++		/// &lt;summary&gt;
++		/// Stream containing raw pcm data from decoders
++		/// &lt;/summary&gt;
+ 		public Stream Data
+ 		{
+ 			get{
+@@ -73,6 +87,9 @@
+ 			}
+ 		}
+ 		
++		/// &lt;summary&gt;
++		/// Stream containing a full Wav file including headers
++		/// &lt;/summary&gt;
+ 		public Stream WavFile
+ 		{
+ 			get{
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000002.html">[Agex-svn] r7 - trunk/AGES/OpenAL
+</A></li>
+	<LI>Next message: <A HREF="000004.html">[Agex-svn] r9 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3">[ date ]</a>
+              <a href="thread.html#3">[ thread ]</a>
+              <a href="subject.html#3">[ subject ]</a>
+              <a href="author.html#3">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/agex-svn">More information about the Agex-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,410 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/agex-svn/2005-May/index.html" >
+   <LINK REL="made" HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r6%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20DirectSound%20OpenAL%20bin/Debug&In-Reply-To=%3C200505201438.j4KEc0v2014224%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000000.html">
+   <LINK REL="Next"  HREF="000002.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug</H1>
+    <B>Ilmar Kruis at BerliOS</B> 
+    <A HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r6%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20DirectSound%20OpenAL%20bin/Debug&In-Reply-To=%3C200505201438.j4KEc0v2014224%40sheep.berlios.de%3E"
+       TITLE="[Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug">seaeagle1 at sheep.berlios.de
+       </A><BR>
+    <I>Fri May 20 16:38:00 CEST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000000.html">[Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+</A></li>
+        <LI>Next message: <A HREF="000002.html">[Agex-svn] r7 - trunk/AGES/OpenAL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1">[ date ]</a>
+              <a href="thread.html#1">[ thread ]</a>
+              <a href="subject.html#1">[ subject ]</a>
+              <a href="author.html#1">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: seaeagle1
+Date: 2005-05-20 16:37:59 +0200 (Fri, 20 May 2005)
+New Revision: 6
+
+Added:
+   trunk/AGES/bin/Debug/OpenAL32.dll
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/DirectSound/DirectSoundManager.cs
+   trunk/AGES/OpenAL/OpenALSoundManager.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/SoundManager.cs
+Log:
+Updated the OpenAL part
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -94,12 +94,12 @@
+             // load a simple sound
+             Sound back = SoundManager.Instance.LoadSound(&quot;background.wav&quot;, Sound.SIMPLE_SOUND);
+             // set the volume low
+-            back.Volume = -2000;
++           // back.Volume = -2000;
+             // play the simple sound in a loop
+-           // back.Play(true);
++            back.Play(true);
+             
+             // load a 3D sound
+-            growl = SoundManager.Instance.LoadSound(&quot;growl.mp3&quot;, Sound.THREED_SOUND);
++            growl = SoundManager.Instance.LoadSound(&quot;growl.ogg&quot;, Sound.THREED_SOUND);
+             // attach the sound to the head
+            	headNode.AttachObject(growl);
+             // set the sound's properties
+
+Modified: trunk/AGES/DirectSound/DirectSoundManager.cs
+===================================================================
+--- trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -69,8 +69,7 @@
+ 		
+ 		public override void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+-			this.window = renderwindow;
+-			this.cam = camera;
++			base.SetRenderWindow(renderwindow, camera);
+ 			
+ 			// link the device to our current System.Windows.Form (since we need DirectX we're sure that we're in Windows)
+ 			device.SetCooperativeLevel((System.Windows.Forms.Control)window.Handle, CooperativeLevel.Priority);
+
+Modified: trunk/AGES/OpenAL/OpenALSoundManager.cs
+===================================================================
+--- trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/OpenAL/OpenALSoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -33,18 +33,52 @@
+ 	public class OpenALSoundManager : SoundManager
+ 	{
+ 		private Vector3 listenerVelocity = Vector3.Zero;
++		private float rolloff = 1;
+ 		
+ 		public OpenALSoundManager () : base()
+ 		{
+ 			Alut.alutInit();
+ 			Al.alGetError();
+-						
++			
++			instance = this;
++			
+ 			LogManager.Instance.Write(&quot;OpenAL SoundSystem initialised&quot;);
+ 		}
++		
++		protected override void FrameUpdate(Object source, FrameEventArgs e)
++		{
++			base.FrameUpdate(source, e);
++			
++			// if the camera moved
++			if(cam.WorldPosition.x != lastcamposition.x || cam.WorldPosition.y != lastcamposition.y || cam.WorldPosition.z != lastcamposition.z)
++			{
++				float[] vector = new float[]{cam.WorldPosition.x, cam.WorldPosition.y, cam.WorldPosition.z};
++				Al.alListenerfv(Al.AL_POSITION, vector);
++				lastcamposition = cam.WorldPosition;
++			} 
++			
++			// if the camera turned
++			if(cam.WorldOrientation.w != lastcamorientation.w || cam.WorldOrientation.x != lastcamorientation.x || cam.WorldOrientation.y != lastcamorientation.y || cam.WorldOrientation.z != lastcamorientation.z)
++			{
++				Axiom.MathLib.Vector3 top = cam.WorldOrientation.YAxis;
++				Axiom.MathLib.Vector3 front = cam.WorldOrientation.ZAxis;
++				float[] doublevector = new float[]{-front.x, -front.y, -front.z, top.x, top.y, top.z}; // negative front, to switch the left and right channel TODO: Test this with surround sound to see if back and forward is ok
++				Al.alListenerfv(Al.AL_ORIENTATION, doublevector);
++				lastcamorientation = cam.WorldOrientation;
++			}
++			
++		}
+ 	
+ 		public override Axiom.SoundSystems.Sound LoadSound(string filename, short type)
+ 		{
+-			return null;
++			// create the sound and add it to the list
++			Sound thissound = new Axiom.SoundSystems.OpenAL.Sound(filename, lastid, type);
++			soundlist.Add(thissound);
++			
++			// update the last id
++			lastid++;
++			
++			return thissound;
+ 		}
+ 		
+ 		public override Vector3 CameraVelocity
+@@ -62,12 +96,10 @@
+ 		public override float RolloffFactor
+ 		{
+ 			set{
+-				Al.alListenerf(Al.AL_ROLLOFF_FACTOR, value);
++				rolloff = value;
+ 			}
+ 			get{
+-				float val;
+-				Al.alGetListenerf(Al.AL_ROLLOFF_FACTOR, out val);
+-				return val;
++				return rolloff;
+ 			}
+ 		}
+ 
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -23,6 +23,7 @@
+ using System.IO;
+ using Axiom.Core;
+ using Axiom.MathLib;
++using Axiom.SoundSystems;
+ using Tao.OpenAl;
+ 
+ namespace Axiom.SoundSystems.OpenAL
+@@ -30,44 +31,93 @@
+ 
+ 	public class Sound : Axiom.SoundSystems.Sound
+ 	{
+-		private int sound;
+-		private int source;
++		private static int sound;
++		private static int source;
+ 		private Vector3 worldposition = Vector3.Zero;
++		private short soundtype;
++		private float rolloff = 1;
+ 		
+ 		public Sound(string filename, int ID, short type) : base(filename, ID)
+ 		{
+-			switch(type)
++			this.soundtype = type;
++			
++			// initialize the buffer
++			Al.alGenBuffers(1, out sound);
++			
++			WaveFile file = FileManager.Instance.Load(filename);
++			
++			int format, size, frequency, loop;
++			byte[] data;			
++			
++			if ( (file.WavFile) != null )
++			{ 
++				// we have a full wave file with headers
++				// read the stream into a byte array
++				byte[] buffer = new byte[file.WavFile.Length];
++				file.WavFile.Read(buffer, 0, (int)file.WavFile.Length);
++				
++				Alut.alutLoadWAVMemory(buffer, out format, out data, out size, out frequency, out loop);
++				
++			} else { // we only have raw PCM encoded data
++				
++				// read the stream into a byte array
++				data = new byte[file.Data.Length];
++				file.Data.Read(data, 0, (int)file.Data.Length);
++				size = (int) file.Data.Length;
++				frequency = file.Frequency;
++				format = 0;
++				
++				// get the data format from the Channels and Bits properties
++				switch(file.Bits)
++				{
++					case 8:
++						switch(file.Channels)
++						{
++							case 1:
++								format = Al.AL_FORMAT_MONO8;
++								break;
++							case 2:
++								format = Al.AL_FORMAT_STEREO8;
++								break;
++						}
++						break;
++					case 16:
++						switch(file.Channels)
++						{
++							case 1:
++								format = Al.AL_FORMAT_MONO16;
++								break;
++							case 2:
++								format = Al.AL_FORMAT_STEREO16;
++								break;
++						}
++						break;
++				}
++			}
++			
++			// fill the buffer
++			Al.alBufferData(sound, format, data, size, frequency);
++			
++			if(file.WavFile != null) // if we loaded a Wave file we can unload it now
+ 			{
+-				case SIMPLE_SOUND:
+-					Al.alGenBuffers(1, out sound);
+-					if(Al.alGetError() != Al.AL_NO_ERROR) {
+-						throw new AxiomException(&quot;Unable to create buffer for file &quot; + filename, null);
+-					}
+-					
+-					MemoryStream file = (MemoryStream)ResourceManager.FindCommonResourceData(filename);
+-					
+-					int format, size, frequency, loop;
+-					byte[] data;
+-					Alut.alutLoadWAVMemory(file.GetBuffer(), out format, out data, out size, out frequency, out loop);
+-					if(data == null)
+-					{
+-						throw new AxiomException(&quot;Unable to load &quot; + filename + &quot; into buffer&quot;);
+-					}
+-					
+-					Al.alBufferData(sound, format, data, size, frequency);
+-					Alut.alutUnloadWAV(format, out data, size, frequency);
++				Alut.alutUnloadWAV(format, out data, size, frequency);
++			}
++			
++			// create a sound source for the buffer
++			Al.alGenSources(1, out source);
+ 
+-					Al.alGenSources(1, out source);
+-					if(Al.alGetError() != Al.AL_NO_ERROR)
+-					{
+-						throw new AxiomException(&quot;Unable to create source for file &quot; + filename, null);
+-					}
+-					
+-					Al.alSourcei(source, Al.AL_BUFFER, sound);
+-					
+-					break;
+-				case THREED_SOUND:
+-					break;
++			// link the buffer and sound source
++			Al.alSourcei(source, Al.AL_BUFFER, sound);
++			
++			if(type == Sound.SIMPLE_SOUND)
++			{
++				Al.alSourcei(source, Al.AL_DISTANCE_MODEL, Al.AL_NONE);
++				rolloff = 0;
++				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, 0);
++				
++			} else if (type == Sound.THREED_SOUND) {
++				
++				Al.alSourcei(source, Al.AL_DISTANCE_MODEL, Al.AL_INVERSE_DISTANCE);
+ 			}
+ 		}
+ 		
+@@ -99,9 +149,30 @@
+ 			base.Dispose();
+ 		}
+ 		
++		public override void UpdatePosition()
++		{
++			base.UpdatePosition();
++			
++			// check if the (global) rolloff factor changed and adapt to it
++			if(SoundManager.Instance.RolloffFactor != rolloff &amp;&amp; this.soundtype == Sound.THREED_SOUND)
++			{
++				rolloff = SoundManager.Instance.RolloffFactor;
++				Al.alSourcef(source, Al.AL_ROLLOFF_FACTOR, rolloff);
++			}
++			
++			// if it's a 'simple' sound, set the position to the listener's position
++			if(this.soundtype == Sound.SIMPLE_SOUND)
++			{
++				float[] temp = new float[3];
++				Al.alGetListenerfv(Al.AL_POSITION, temp);
++				Al.alSourcefv(source, Al.AL_POSITION, temp);
++			}
++		}
++		
+ 		protected override void SetPosition(Axiom.MathLib.Vector3 newposition)
+ 		{
+-			//TODO: Implement
++			float[] vector = new float[]{newposition.x, newposition.y, newposition.z};
++			Al.alSourcefv(source, Al.AL_POSITION, vector);
+ 		}
+ 		
+ 		public override Vector3 WorldPosition
+@@ -111,6 +182,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: relative to SceneNode
+ 		public override int[] ConeAngles
+ 		{
+ 			get{
+@@ -125,6 +197,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: relative to SceneNode
+ 		public override Vector3 ConeDirection
+ 		{
+ 			get{
+@@ -187,6 +260,7 @@
+ 			}
+ 		}
+ 		
++		//TODO: Volume conversion doesn't work too well yet
+ 		protected float GetOpenALVolume(int directSoundVolume)
+ 		{
+ 			float newvalue = (float)directSoundVolume / 1000f + 1f;
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
++++ trunk/AGES/SoundManager.cs	2005-05-20 14:37:59 UTC (rev 6)
+@@ -141,9 +141,11 @@
+ 		/// &lt;/summary&gt;
+ 		/// &lt;param name=&quot;window&quot;&gt;The target RenderWindow&lt;/param&gt;
+ 		/// &lt;param name=&quot;camera&quot;&gt;The 'listening' camera&lt;/param&gt;
+-		public virtual void SetRenderWindow(RenderWindow window, Camera camera)
++		public virtual void SetRenderWindow(RenderWindow renderwindow, Camera camera)
+ 		{
+ 			FileManager.Instance.LogSupportedFiles();
++			this.window = renderwindow;
++			this.cam = camera;
+ 		}
+ 		
+ 		/// &lt;summary&gt;
+
+Added: trunk/AGES/bin/Debug/OpenAL32.dll
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/AGES/bin/Debug/OpenAL32.dll
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000000.html">[Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+</A></li>
+	<LI>Next message: <A HREF="000002.html">[Agex-svn] r7 - trunk/AGES/OpenAL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1">[ date ]</a>
+              <a href="thread.html#1">[ thread ]</a>
+              <a href="subject.html#1">[ subject ]</a>
+              <a href="author.html#1">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/agex-svn">More information about the Agex-svn
+mailing list</a><br>
+</body></html>

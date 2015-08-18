@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/agex-svn/2005-May/index.html" >
+   <LINK REL="made" HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r5%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20DirectSound%20OpenAL&In-Reply-To=%3C200505192333.j4JNXcr8022334%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL</H1>
+    <B>Ilmar Kruis at BerliOS</B> 
+    <A HREF="mailto:agex-svn%40lists.berlios.de?Subject=Re%3A%20%5BAgex-svn%5D%20r5%20-%20in%20trunk/AGES%3A%20.%20AGESDemo%20DirectSound%20OpenAL&In-Reply-To=%3C200505192333.j4JNXcr8022334%40sheep.berlios.de%3E"
+       TITLE="[Agex-svn] r5 - in trunk/AGES: . AGESDemo DirectSound OpenAL">seaeagle1 at sheep.berlios.de
+       </A><BR>
+    <I>Fri May 20 01:33:38 CEST 2005</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000001.html">[Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: seaeagle1
+Date: 2005-05-20 01:33:34 +0200 (Fri, 20 May 2005)
+New Revision: 5
+
+Modified:
+   trunk/AGES/AGESDemo/AGESdemo.cs
+   trunk/AGES/DirectSound/DirectSoundManager.cs
+   trunk/AGES/DirectSound/Sound.cs
+   trunk/AGES/OpenAL/Sound.cs
+   trunk/AGES/Sound.cs
+   trunk/AGES/SoundManager.cs
+Log:
+Added some comments and Pause() and Stop() methods
+
+Modified: trunk/AGES/AGESDemo/AGESdemo.cs
+===================================================================
+--- trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/AGESDemo/AGESdemo.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -86,7 +86,7 @@
+             SceneNode cameraNode = scene.RootSceneNode.CreateChildSceneNode(&quot;CameraNode&quot;);
+             cameraNode.AttachObject(camera);
+  
+-            ////////////////////////////////////////////////////////////////////////////////
++            /////////////////////////- AGE Sound Library Settings -//////////////////////////
+             // initialise the SoundManager by setting the RenderWindow
+             SoundManager.Instance.SetRenderWindow(this.window, this.camera);
+             SoundManager.Instance.RolloffFactor = 0.01f; // we're working on a large scale
+
+Modified: trunk/AGES/DirectSound/DirectSoundManager.cs
+===================================================================
+--- trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/DirectSound/DirectSoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -57,9 +57,13 @@
+ 		
+ 		public override Axiom.SoundSystems.Sound LoadSound(string filename, short type)
+ 		{
++			// create the sound and add it to our list
+ 			Axiom.SoundSystems.Sound sound = new Axiom.SoundSystems.DirectSound.Sound(filename, lastid, type);
+ 			soundlist.Add(sound);
++			
++			// update the ID counter
+ 			lastid++;
++			
+ 			return sound;
+ 		}
+ 		
+@@ -68,13 +72,17 @@
+ 			this.window = renderwindow;
+ 			this.cam = camera;
+ 			
++			// link the device to our current System.Windows.Form (since we need DirectX we're sure that we're in Windows)
+ 			device.SetCooperativeLevel((System.Windows.Forms.Control)window.Handle, CooperativeLevel.Priority);
+ 			
++			// create a buffer for the listener
+ 			BufferDescription desc = new BufferDescription();
+ 			desc.Control3D = true;
+ 			desc.PrimaryBuffer = true;
+ 			Buffer lbuffer = new Buffer(desc, device);
+ 			listener = new Listener3D(lbuffer);
++			
++			// let the log know that we're using DirectSound and it's set up
+ 			LogManager.Instance.Write(&quot;DirectSound SoundSystem initialised&quot;);
+ 		}
+ 		
+@@ -82,11 +90,14 @@
+ 		{
+ 			base.FrameUpdate(source, e);
+ 			
++			// if the camera moved
+ 			if(cam.WorldPosition.x != lastcamposition.x || cam.WorldPosition.y != lastcamposition.y || cam.WorldPosition.z != lastcamposition.z)
+ 			{
+ 				listener.Position = new Vector3(cam.WorldPosition.x, cam.WorldPosition.y, cam.WorldPosition.z);
+ 				lastcamposition = cam.WorldPosition;
+ 			}
++			
++			// if the camera turned
+ 			if(cam.WorldOrientation.w != lastcamorientation.w || cam.WorldOrientation.x != lastcamorientation.x || cam.WorldOrientation.y != lastcamorientation.y || cam.WorldOrientation.z != lastcamorientation.z)
+ 			{
+ 				Axiom.MathLib.Vector3 top = cam.WorldOrientation.YAxis;
+@@ -94,6 +105,8 @@
+ 				listener.Orientation = new Listener3DOrientation(new Vector3(front.x, front.y, front.z), new Vector3(top.x, top.y, top.z));	
+ 				lastcamorientation = cam.WorldOrientation;
+ 			}
++			
++			// we have updated all sound settings for this frame, so let DirectX recalculate the output sound with the new settings
+ 			listener.CommitDeferredSettings();
+ 			
+ 		}
+
+Modified: trunk/AGES/DirectSound/Sound.cs
+===================================================================
+--- trunk/AGES/DirectSound/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/DirectSound/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -35,22 +35,29 @@
+ 		
+ 		public Sound(string filename, int ID, short type) : base(filename, ID)
+ 		{
++			// get the file data
+ 			WaveFile wf = FileManager.Instance.Load(filename);
+ 			
+-			if(wf.WavFile != null)
++			if(wf.WavFile != null) // we have a wave file with headers
+ 			{
++				// set up the buffer properties
+ 				soundDesc = new BufferDescription();
+ 				soundDesc.GlobalFocus = false;
+ 				soundDesc.ControlVolume = true;
+ 				
++				// enable 3D features for 3D sounds
+ 				if(type == Sound.THREED_SOUND)
+ 				{
+ 					soundDesc.Control3D = true;
+ 					soundDesc.Mute3DAtMaximumDistance = true;
+ 				}
+ 				
++				// load the wave file from the stream into the buffer
+ 				sound = new SecondaryBuffer(wf.WavFile, soundDesc, ((DirectSoundManager)SoundManager.Instance).Device);
+-			} else {
++				
++			} else { // we have only raw PCM encoded sound data (usually from a decoder)
++				
++				// convert the format settings
+ 				WaveFormat wfo = new WaveFormat();
+ 				wfo.BitsPerSample = wf.Bits;
+ 				wfo.Channels = wf.Channels;
+@@ -59,20 +66,25 @@
+ 				wfo.FormatTag = WaveFormatTag.Pcm;
+ 				wfo.AverageBytesPerSecond = wf.Frequency * wfo.BlockAlign;
+ 				
++				// set up buffer properties
+ 				soundDesc = new BufferDescription(wfo);
+ 				soundDesc.GlobalFocus = false;
+ 				soundDesc.ControlVolume = true;
+ 				soundDesc.BufferBytes = (int)wf.Data.Length;
++				
++				// enable 3D features for 3D sounds
+ 				if(type == Sound.THREED_SOUND)
+ 				{
+ 					soundDesc.Control3D = true;
+ 					soundDesc.Mute3DAtMaximumDistance = true;
+ 				}
+ 				
++				// initialise the buffer and copy the (raw data) stream into it
+ 				sound = new SecondaryBuffer(soundDesc, ((DirectSoundManager)SoundManager.Instance).Device);	
+ 				sound.Write(0, wf.Data, (int)wf.Data.Length, LockFlag.EntireBuffer);
+ 			}
+ 			
++			// create a 3D buffer for 3D sounds
+ 			if(type == Sound.THREED_SOUND)
+ 			{
+ 				threeDsound = new Buffer3D(sound);
+@@ -92,6 +104,16 @@
+ 			}
+ 		}
+ 		
++		public override void Pause()
++		{
++			sound.Stop();
++		}
++		
++		public override void Stop()
++		{
++			sound.Stop();
++			sound.SetCurrentPosition(0);
++		}
+ 		public override void Dispose()
+ 		{
+ 			base.Dispose();
+
+Modified: trunk/AGES/OpenAL/Sound.cs
+===================================================================
+--- trunk/AGES/OpenAL/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/OpenAL/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -82,6 +82,16 @@
+ 			Al.alSourcePlay(source);
+ 		}
+ 		
++		public override void Pause()
++		{
++			Al.alSourcePause(source);
++		}
++		
++		public override void Stop()
++		{
++			Al.alSourceStop(source);
++		}
++		
+ 		public override void Dispose()
+ 		{
+ 			Al.alDeleteSources(1, ref source);
+
+Modified: trunk/AGES/Sound.cs
+===================================================================
+--- trunk/AGES/Sound.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/Sound.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -79,6 +79,16 @@
+ 		public abstract void Play(bool loop);
+ 		
+ 		/// &lt;summary&gt;
++		/// Stops playing the file, calling &lt;see cref=&quot;Play(bool loop)&quot;&gt;Play()&lt;/see&gt; again will start playing from the position where Pause() was called
++		/// &lt;/summary&gt;
++		public abstract void Pause();
++		
++		/// &lt;summary&gt;
++		/// Stops playing the file and set the play position to the start of the buffer
++		/// &lt;/summary&gt;
++		public abstract void Stop();
++		
++		/// &lt;summary&gt;
+ 		/// The ID of this sound given by the SoundManager
+ 		/// &lt;/summary&gt;
+ 		public int ID
+
+Modified: trunk/AGES/SoundManager.cs
+===================================================================
+--- trunk/AGES/SoundManager.cs	2005-05-19 21:39:01 UTC (rev 4)
++++ trunk/AGES/SoundManager.cs	2005-05-19 23:33:34 UTC (rev 5)
+@@ -22,8 +22,7 @@
+ // Some general remarks and todos
+ // TODO: split buffer and source to prevent more filesystem access than needed
+ // TODO: Music class for streaming long files
+-// TODO: Ogg/Mp3 decoder
+-// ?long term: load in seperate thread
++// TODO: Threading
+ 
+ using System;
+ using System.Collections;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000001.html">[Agex-svn] r6 - in trunk/AGES: . AGESDemo DirectSound OpenAL bin/Debug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/agex-svn">More information about the Agex-svn
+mailing list</a><br>
+</body></html>
